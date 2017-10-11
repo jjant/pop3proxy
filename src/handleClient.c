@@ -7,7 +7,6 @@
 #include <ctype.h>
 #include "handleClient.h"
 
-#define BUFSIZE 1025
 //There are separated defines because perhaps there are necessary in the future
 #define ERROR 0
 #define USER 1
@@ -20,36 +19,26 @@
 #define NOOP 8
 #define RSET 9
 
-char* errStr = "-ERR\n";
-char* okStr = "+OK\n";
-
-int handleClient(int clntSocket) {
+int handleClient(int clntSocket, char* buffer, int bufsize) {
   int valread, valsend, analyzeResponse;
-  char buffer[BUFSIZE]; // Buffer for receiving string
+  char bufferAux[bufsize];
   char* respStr = NULL;
 
-  if ((valread = read( clntSocket , buffer, 1024)) == 0){
-    return 0;
-  }
-  else if (valread < 0){
-    printf("Read failed\n");
+  if ((valread = read( clntSocket , buffer, bufsize)) <= 0){
+    return valread;
   }
   else{
+    //copy buffer to bufferAux for now...
     //set the string terminating NULL byte on the end of the data read
-    buffer[valread] = '\0';
-    analyzeResponse = analyzeString( buffer );
+    memcpy(bufferAux, buffer, bufsize);
+    bufferAux[valread] = '\0';
+    analyzeResponse = analyzeString( bufferAux );
     //There are separated printf for each case because perhaps there are necessary in the future...
     switch ( analyzeResponse ){
-      case ERROR: printf("-ERR\n");
-                  respStr = errStr;
+      case ERROR: ;
                   break;
-      default:    printf("+OK\n");
-                  respStr = okStr;  
+      default:    ;  
                   break;
-    }
-    valsend = send(clntSocket , respStr , strlen(respStr) , 0 );
-    if ( valsend < 0 ){
-      printf("Send failed\n");
     }
   }
   return 1;
@@ -58,7 +47,6 @@ int handleClient(int clntSocket) {
 int analyzeString(char buffer[]){
   char c = buffer[0];
   //Check commands list. For those commands with the same first letter, check the second one.
-  //
   switch( c ){
       case 'U':
       case 'u': if ( analyzeWord( 1, buffer, "SER" ) == 1 )

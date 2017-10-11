@@ -4,7 +4,7 @@
 /**
  * Main function for clients handling
  */
-int handleClient(int clntSocket);
+int handleClient(int clntSocket, char* buffer, int bufsize);
 
 /**
  * Checks the first char in the buffer and delegates the parsing to analyzeWord
