@@ -10,20 +10,42 @@
 #include <sys/time.h>   //FD_SET, FD_ISSET, FD_ZERO macros
 #include <sys/select.h>
 #include <stdbool.h>
+#include <sys/signal.h>
+#include <pthread.h>
 #include "proxyUtilities.h"
-#include "handleClient.h"
+
+/**
+ * Received signal function. Does nothing...
+ */
+static void wake_handler(const int signal) {
+    printf("SIGNAL RECEIVED. DNS resolution and connection succeeded.\n\n");
+    return;
+}
 
 int main(int argc , char *argv[])
 {
     int opt = TRUE;
-    int master_socket , new_client_socket , new_server_socket , addrClientlen , addrServerlen ;
+    int master_socket , new_client_socket , new_server_socket , addrClientlen ;
     int activity ,valread , sdc , sds , max_sd , aux_max_sd , i , j;
-    struct sockaddr_in addressClient, addressServer;
+    struct sockaddr_in addressClient;
     struct DescriptorsArrays descriptorsArrays;
     char buffer[MAXCLIENTS][BUFSIZE];
     //set of socket descriptors
-    fd_set readfds, writefds; 
-  
+    fd_set readfds, writefds;
+    pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
+    sigset_t emptyset, blockset;
+    struct sigaction act = {
+        .sa_handler = wake_handler,
+    };
+
+    // Settings for signals actions
+    // Block SIGUSR1 (signal with no specific use)
+    sigemptyset(&blockset);  
+    sigaddset(&blockset, SIGUSR1);
+    sigprocmask(SIG_BLOCK, &blockset, NULL);
+    sigaction(SIGUSR1, &act, NULL);
+    sigemptyset(&emptyset);
+
     //Initialize arrays
     initialiseArrays( &descriptorsArrays, buffer );
 
@@ -40,9 +62,8 @@ int main(int argc , char *argv[])
     }
   
     //type of socket for client and server
-    setSocketsType( &addressClient, &addressServer );
+    setSocketType( &addressClient );
     addrClientlen = sizeof(addressClient);
-    addrServerlen = sizeof(addressServer);
       
     //bind the socket to localhost port 8888
     if (bind(master_socket, (struct sockaddr *)&addressClient, sizeof(addressClient))<0){
@@ -50,17 +71,17 @@ int main(int argc , char *argv[])
         exit(EXIT_FAILURE);
     }
          
-    //try to specify maximum of 3 pending connections for the master socket
+    //try to specify maximum of MAXCLIENTS pending connections for the master socket
     if (listen(master_socket, MAXCLIENTS) < 0){
         perror("listen failed");
         exit(EXIT_FAILURE);
     }
     
     printf("Listening on port %d, waiting for connections...\n\n", PORT);
-
      
     while(TRUE){
         //clear the socket sets
+        pthread_mutex_lock(&mtx);
         FD_ZERO(&readfds);
         FD_ZERO(&writefds);
   
@@ -70,13 +91,14 @@ int main(int argc , char *argv[])
         max_sd = master_socket;
 
         //adds child sockets to set         
-        //returns the highest file descriptor number, needed for the select function
+        //returns the highest file descriptor number, needed for the pselect function
         aux_max_sd = addDescriptors( &descriptorsArrays, &readfds, &writefds);
+        pthread_mutex_unlock(&mtx);
         if( aux_max_sd > max_sd )
             max_sd = aux_max_sd;
   
         //wait for an activity on one of the sockets , timeout is NULL , so wait indefinitely
-        activity = select( max_sd + 1 , &readfds , &writefds , NULL , NULL);
+        activity = pselect( max_sd + 1 , &readfds , &writefds , NULL , NULL, &emptyset);
     
         if ((activity < 0) && (errno!=EINTR)){
             printf("select error");
@@ -84,101 +106,12 @@ int main(int argc , char *argv[])
           
         //If something happened on the master socket , then its an incoming connection
         if (FD_ISSET(master_socket, &readfds)){
-            handleNewConnection(master_socket, &addressClient, &addressServer, &addrClientlen , &descriptorsArrays);   
-        }
-          
+            handleNewConnection(master_socket, &addressClient, &addrClientlen , &descriptorsArrays,  &readfds, &writefds , &mtx );
+        }    
         //else it's some IO operation on some other socket
-        for (i = 0; i < MAXCLIENTS; i++){
-            sdc = descriptorsArrays.client_sockets_read[i];
-            sds = descriptorsArrays.server_sockets_read[i];
-              
-            //reading requests from client  
-            if (FD_ISSET( sdc , &readfds)){
-                //resets buffer
-                for( j = 0 ; j < BUFSIZE ; j++ ){
-                    buffer[i][j] = '\0';
-                }
-                //Handle client conection
-                //Here it calls the parser function and analyse the requests. For now it does nothing, sends command without changing it.
-                int handleResponse = handleClient(sdc, buffer[i], BUFSIZE);
-            	//int handleResponse = read( sdc , buffer[i], BUFSIZE);
-            	if( handleResponse == 0 ){
-            		//Somebody disconnected , get his details and print
-                    getpeername(sdc , (struct sockaddr*)&addressClient , (socklen_t*)&addrClientlen);
-                    printf("Host disconnected , ip %s , port %d \n" , inet_ntoa(addressClient.sin_addr) , ntohs(addressClient.sin_port));
-                      
-                    //Close the socket and mark as 0 in list for reuse
-                    close( sdc );
-                    close( sds );
-                    descriptorsArrays.client_sockets_read[i] = 0;
-                    descriptorsArrays.server_sockets_read[i] = 0;
-            	}
-                else if(handleResponse < 0){
-                    perror("read failed");
-                }
-                else{
-                    printf("Reading something from client:\n");
-                    printf("%s\n", buffer[i] );
-                    descriptorsArrays.server_sockets_write[i] = descriptorsArrays.server_sockets_read[i]; 
-                }
-            }
-            //reading responses from server
-            if (FD_ISSET( sds , &readfds)){
-                //resets buffer
-                for( j = 0 ; j < BUFSIZE ; j++ ){
-                    buffer[i][j] = '\0';
-                }
-                //Handle server conection
-                //Here we should call the parser function and analyse the responses
-                int handleResponse = read( sds , buffer[i], BUFSIZE);
-                if( handleResponse == 0 ){
-                    //Somebody disconnected , get his details and print
-                    getpeername(sdc , (struct sockaddr*)&addressClient , (socklen_t*)&addrClientlen);
-                    printf("Server disconnected\n");
-                      
-                    //Close the socket and mark as 0 in list for reuse
-                    close( sdc );
-                    close( sds );
-                    descriptorsArrays.client_sockets_read[i] = 0;
-                    descriptorsArrays.server_sockets_read[i] = 0;
-                }
-                else if(handleResponse < 0){
-                    perror("read failed");
-                }
-                else{
-                    printf("Reading something from server:\n");
-                    printf("%s\n", buffer[i] );
-                    descriptorsArrays.client_sockets_write[i] = descriptorsArrays.client_sockets_read[i]; 
-                }
-            }
-
-            sdc = descriptorsArrays.client_sockets_write[i];
-            sds = descriptorsArrays.server_sockets_write[i];
-
-            //writing to client
-            if (FD_ISSET( sdc , &writefds )){
-                if ( write( sdc , buffer[i], strlen(buffer[i])) != strlen(buffer[i])){
-                    perror("write failed");       
-                }
-                for( j = 0 ; j < BUFSIZE ; j++ ){
-                    buffer[i][j] = '\0';
-                }
-                descriptorsArrays.client_sockets_write[i] = 0;
-
-            }
-            //writing to server
-            if (FD_ISSET( sds , &writefds )){
-                if ( write( sds , buffer[i], strlen(buffer[i])) != strlen(buffer[i])){
-                    perror("write failed");       
-                }
-                for( j = 0 ; j < BUFSIZE ; j++ ){
-                    buffer[i][j] = '\0';
-                }
-                descriptorsArrays.server_sockets_write[i] = 0;
-            }
+        else{
+            handleIOOperations(&descriptorsArrays, &readfds, &writefds, buffer, &addressClient, &addrClientlen);     
         }
-
     }
-      
     return 0;
 }
