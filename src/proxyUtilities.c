@@ -18,16 +18,26 @@
 
 pthread_t threadForConnection;
 
-void setSocketType( struct sockaddr_in* client_address ) {
+void setSocketType( struct sockaddr_in* client_address, int port ) {
     //type of socket created for client
     client_address->sin_family      = AF_INET;
     client_address->sin_addr.s_addr = INADDR_ANY;
-    client_address->sin_port        = htons( PORT );
+    client_address->sin_port        = htons( port );
 }
 
-int addDescriptors( struct DescriptorsArrays* dA, fd_set* readfds, fd_set* writefds, int n) {
-    int sdc, sds, max_sd;
+int addDescriptors( struct DescriptorsArrays* dA, int **conf_sockets_array, fd_set* readfds, fd_set* writefds, int n, int m) {
+    int sdc, sds, conf_ds, max_sd;
     max_sd = 0;
+
+    for ( int j = 0 ; j < m ; j++){
+        conf_ds = (*conf_sockets_array)[j];
+        if (conf_ds > 0){
+            FD_SET( conf_ds , readfds);
+            if(conf_ds > max_sd)
+                max_sd = conf_ds;
+        }
+    }
+
     for ( int i = 0 ; i < n ; i++) {
         //if valid socket descriptor then add to read list
         sdc = dA->client_sockets_read[i];
@@ -59,7 +69,42 @@ int addDescriptors( struct DescriptorsArrays* dA, fd_set* readfds, fd_set* write
     return max_sd;
 }
 
-void handleNewConnection(int ms, struct sockaddr_in *ca, int *cal, struct DescriptorsArrays *dA, fd_set *readfds, fd_set *writefds, pthread_mutex_t *mtx, int *cAm, struct buffer ****b) {
+void handleConfConnection(int conf_master_socket, struct sockaddr_in *conf_address, int *conf_addr_len, int **conf_sockets_array, int *conf_sockets_amount, pthread_mutex_t *mtx){
+    int     new_conf_socket;
+    int     add_fd              = 1;
+    char    *message            = "Connecting to POP3 proxy for configuration... \r\n";
+
+    if ((new_conf_socket = accept(conf_master_socket, (struct sockaddr *)conf_address, (socklen_t*)conf_addr_len))<0) {
+        perror("---config--- accept failed");
+        exit(EXIT_FAILURE);
+    }
+
+    //send new connection greeting message
+    if( write(new_conf_socket, message, strlen(message)) != strlen(message) ) {
+        perror("---config--- write greeting message failed");
+    }
+
+    pthread_mutex_lock(mtx); 
+    for ( int i = 0; i < *conf_sockets_amount ; i++){
+        if( (*conf_sockets_array)[i] == 0 ){
+            (*conf_sockets_array)[i] = new_conf_socket;
+            add_fd                   = 0;
+            break;
+        }
+    } 
+    if(add_fd){
+        *conf_sockets_array = realloc( *conf_sockets_array, ((*conf_sockets_amount)+1)*sizeof(int) );
+        (*conf_sockets_amount)++;
+        (*conf_sockets_array)[(*conf_sockets_amount)-1] = new_conf_socket;
+    }
+    pthread_mutex_unlock(mtx);
+
+    printf("New configuration connection: Socket fd: %d , ip: %s , port: %d\n" , new_conf_socket , inet_ntoa(conf_address->sin_addr) , ntohs(conf_address->sin_port));
+
+    return;
+}
+
+void handleNewConnection(int ms, struct sockaddr_in *ca, int *cal, struct DescriptorsArrays *dA, pthread_mutex_t *mtx, int *cAm, struct buffer ****b) {
     struct ThreadArgs*  threadArgs;
     pthread_t           tId;
 
@@ -71,8 +116,6 @@ void handleNewConnection(int ms, struct sockaddr_in *ca, int *cal, struct Descri
     threadArgs->client_address  = ca;
     threadArgs->client_addr_len = cal;
     threadArgs->dA              = dA;
-    threadArgs->readfds         = readfds;
-    threadArgs->writefds        = writefds;
     threadArgs->tId             = tId;
     threadArgs->mtx             = mtx;
     threadArgs->buffers         = b;
@@ -84,12 +127,14 @@ void handleNewConnection(int ms, struct sockaddr_in *ca, int *cal, struct Descri
 }
 
 void* handleThreadForConnection(void* args) {
-    char                *message                                    = "Connection through proxy... \r\n";
+    char                *message                                    = "Connecting through POP3 proxy... \r\n";
     int                 add_fd                                      = 1;
     int                 new_server_socket , new_client_socket, rv;
     struct ThreadArgs   *tArgs;
     struct addrinfo     hints, *servinfo, *p;
  
+    pthread_detach(pthread_self());
+
     tArgs = (struct ThreadArgs *)args;
 
     if ((new_client_socket = accept(tArgs->master_socket, (struct sockaddr *)tArgs->client_address, (socklen_t*)tArgs->client_addr_len))<0) {
@@ -147,10 +192,12 @@ void* handleThreadForConnection(void* args) {
     //if there are no places available, realloc and add at the end
     if(add_fd) {
         reserveSpace(tArgs);
-        tArgs->dA->client_sockets_read[*(tArgs->clients_amount)-1]  = new_client_socket;
-        tArgs->dA->server_sockets_read[*(tArgs->clients_amount)-1]  = new_server_socket;
-        tArgs->dA->client_sockets_write[*(tArgs->clients_amount)-1] = 0;
-        tArgs->dA->server_sockets_write[*(tArgs->clients_amount)-1] = 0;
+        tArgs->dA->client_sockets_read[*(tArgs->clients_amount)-1]          = new_client_socket;
+        tArgs->dA->server_sockets_read[*(tArgs->clients_amount)-1]          = new_server_socket;
+        tArgs->dA->client_sockets_write[*(tArgs->clients_amount)-1]         = 0;
+        tArgs->dA->server_sockets_write[*(tArgs->clients_amount)-1]         = 0;
+        tArgs->dA->client_commands_to_process[*(tArgs->clients_amount)-1]   = 0;
+        tArgs->dA->server_commands_to_process[*(tArgs->clients_amount)-1]   = 0;
     }    
     pthread_mutex_unlock(tArgs->mtx);
 
@@ -159,12 +206,6 @@ void* handleThreadForConnection(void* args) {
     
     //send signal to main thread to let it know that the domain name has been resolved and the connection has been made 
     pthread_kill( tArgs->tId, SIGUSR1);
-    
-    if((*(tArgs->buffers))[0][1]->write == NULL)
-                printf("buffers--->write NULL inside function\n");
-    else
-        printf("puntero write: %s\n", (*(tArgs->buffers))[0][1]->write);
-
 
     //free(tArgs);
     pthread_exit(0);
@@ -176,11 +217,14 @@ void reserveSpace(struct ThreadArgs * tArgs){
     char            *aux_buf_s                        = NULL;
     struct buffer   *client_buffer, *server_buffer;
 
-    tArgs->dA->client_sockets_read  = realloc(tArgs->dA->client_sockets_read, (*(tArgs->clients_amount)+1)*sizeof(int));
-    tArgs->dA->client_sockets_write = realloc(tArgs->dA->client_sockets_write, (*(tArgs->clients_amount)+1)*sizeof(int));
-    tArgs->dA->server_sockets_read  = realloc(tArgs->dA->server_sockets_read, (*(tArgs->clients_amount)+1)*sizeof(int));
-    tArgs->dA->server_sockets_write = realloc(tArgs->dA->server_sockets_write, (*(tArgs->clients_amount)+1)*sizeof(int));
-    *(tArgs->buffers)                  = realloc(*(tArgs->buffers), (*(tArgs->clients_amount)+1)*sizeof(struct buffer**));
+    tArgs->dA->client_sockets_read          = realloc(tArgs->dA->client_sockets_read, (*(tArgs->clients_amount)+1)*sizeof(int));
+    tArgs->dA->client_sockets_write         = realloc(tArgs->dA->client_sockets_write, (*(tArgs->clients_amount)+1)*sizeof(int));
+    tArgs->dA->server_sockets_read          = realloc(tArgs->dA->server_sockets_read, (*(tArgs->clients_amount)+1)*sizeof(int));
+    tArgs->dA->server_sockets_write         = realloc(tArgs->dA->server_sockets_write, (*(tArgs->clients_amount)+1)*sizeof(int));
+    tArgs->dA->client_commands_to_process   = realloc(tArgs->dA->client_commands_to_process, (*(tArgs->clients_amount)+1)*sizeof(int));
+    tArgs->dA->server_commands_to_process   = realloc(tArgs->dA->server_commands_to_process, (*(tArgs->clients_amount)+1)*sizeof(int)); 
+    *(tArgs->buffers)                       = realloc(*(tArgs->buffers), (*(tArgs->clients_amount)+1)*sizeof(struct buffer**));
+    
     (*(tArgs->clients_amount))++;
     (*(tArgs->buffers))[*(tArgs->clients_amount)-1] = malloc(2*sizeof(struct buffer*));
 
@@ -216,12 +260,48 @@ void reserveSpace(struct ThreadArgs * tArgs){
 
 }
 
-void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, fd_set *readfds, fd_set *writefds, struct buffer ****b, struct sockaddr_in *client_address, int *client_addr_len, int *clients_amount) {
-    int             i, j, sdc, sds, str_size;
-    char            aux_buf[BUFSIZE];
-    struct buffer   ***buffer                   = *b;
+void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf_sockets_array, fd_set *readfds, fd_set *writefds, struct buffer ****b, struct sockaddr_in *client_address, struct sockaddr_in *conf_address, int *client_addr_len, int *conf_addr_len, int clients_amount, int conf_sockets_amount) {
+    int             k, l, i, j, sdc, sds, conf_ds, str_size;
+    char            aux_buf[BUFSIZE], aux_conf_buf[BUFSIZE];
+    struct buffer   ***buffer                                   = *b;
 
-    for (i = 0; i < *clients_amount; i++) {
+    //handle config admins
+    for (k = 0; k < conf_sockets_amount; k++ ){
+        conf_ds = (*conf_sockets_array)[k];
+        
+        if (FD_ISSET( conf_ds , readfds )) {
+            printf("---config--- CONEXIÓN %d, ENTER READ\n", k);
+            for( l = 0 ; l < BUFSIZE ; l++ ) {
+                aux_conf_buf[l] = '\0';
+            }
+            int handleResponse = read( conf_ds , aux_conf_buf, BUFSIZE);   
+            
+            if( handleResponse == 0 ) {
+                //Somebody disconnected , get his details and print
+                getpeername(conf_ds , (struct sockaddr*)conf_address , (socklen_t*)conf_addr_len);
+                printf("---config--- Config Host disconnected , ip %s , port %d \n" , inet_ntoa((*conf_address).sin_addr) , ntohs((*conf_address).sin_port));
+                      
+                //Close the socket and mark as 0 in list for reuse, or
+                printf("---config--- CONEXIÓN %d, CIERRA ADMIN\n", k);
+                close( conf_ds );
+                (*conf_sockets_array)[k] = 0;
+            }
+            else if(handleResponse < 0) {
+                perror("---config--- read failed");
+            }
+            else {
+                //For now, it only echoes.
+                printf("---config--- Read something from admin\n");
+                if ( write( conf_ds , aux_conf_buf, strlen(aux_conf_buf)) != strlen(aux_conf_buf)) {
+                perror("---config--- write failed");       
+            }
+            }
+
+        }
+    }
+
+    //handle pop3 clients
+    for (i = 0; i < clients_amount; i++) {
         
         sdc = descriptors_arrays->client_sockets_write[i];
         sds = descriptors_arrays->server_sockets_write[i];
@@ -239,6 +319,7 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, fd_set *re
                 aux_buf[BUFSIZE] = '\0';
             }
 
+            //in case of reading an entire command, add space for '\0'
             if( (buffer[i][1]->read + rbytes) < buffer[i][1]->limit ){
                 rbytes++;
             }
@@ -247,10 +328,13 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, fd_set *re
             if ( write( sdc , aux_buf, strlen(aux_buf)) != strlen(aux_buf)) {
                 perror("write failed");       
             }  
-            descriptors_arrays->client_sockets_write[i] = 0;
+            (descriptors_arrays->server_commands_to_process[i])--;
+            if( (descriptors_arrays->server_commands_to_process[i]) == 0 ){
+                descriptors_arrays->client_sockets_write[i] = 0;
+            }
         }
         //writing to server
-        if (FD_ISSET( sds , writefds )) {
+        if (FD_ISSET( sds , writefds ) ) {
             printf("CONEXIÓN %d, ENTER WRITE TO SERVER\n", i);
             for( j = 0 ; j < BUFSIZE ; j++ ) {
                 aux_buf[j] = '\0';
@@ -262,6 +346,7 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, fd_set *re
                 aux_buf[BUFSIZE] = '\0';
             }
 
+            //in case of reading an entire command, add space for '\0'
             if( (buffer[i][0]->read + rbytes) < buffer[i][0]->limit ){
                 rbytes++;
             }
@@ -271,7 +356,10 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, fd_set *re
             if ( write( sds , aux_buf, strlen(aux_buf)) != strlen(aux_buf)) {
                 perror("write failed");       
             }
-            descriptors_arrays->server_sockets_write[i] = 0;
+            (descriptors_arrays->client_commands_to_process[i])--;
+            if( (descriptors_arrays->client_commands_to_process[i]) == 0 ){
+                descriptors_arrays->server_sockets_write[i] = 0;
+            }
         }
 
 
@@ -279,7 +367,9 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, fd_set *re
         sds = descriptors_arrays->server_sockets_read[i];
 
         //reading requests from client  
-        if (FD_ISSET( sdc , readfds)) {  
+        if ( FD_ISSET(sdc , readfds) ) { 
+
+
             printf("CONEXIÓN %d, ENTER READ FROM CLIENT\n", i);
             for( j = 0 ; j < BUFSIZE ; j++ ) {
                 aux_buf[j] = '\0';
@@ -326,12 +416,13 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, fd_set *re
             }
             else {
                 printf("Read something from client\n");
+                (descriptors_arrays->client_commands_to_process[i])++;
                 descriptors_arrays->server_sockets_write[i] = descriptors_arrays->server_sockets_read[i]; 
             }
         }
 
         //reading responses from server
-        if (FD_ISSET( sds , readfds)) {
+        if ( FD_ISSET(sds , readfds) ) {
             printf("CONEXIÓN %d, ENTER READ FROM SERVER\n", i);
             for( j = 0 ; j < BUFSIZE ; j++ ) {
                 aux_buf[j] = '\0';
@@ -378,9 +469,10 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, fd_set *re
             }
             else {
                 printf("Read something from server\n");
+                (descriptors_arrays->server_commands_to_process[i])++;
                 descriptors_arrays->client_sockets_write[i] = descriptors_arrays->client_sockets_read[i]; 
             }
         }
-        
+        printf("commands to process: %d\n", (descriptors_arrays->client_commands_to_process[i]));
     }    
 }

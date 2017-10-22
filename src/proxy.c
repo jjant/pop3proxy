@@ -34,19 +34,25 @@ static void finalize_pgm(const int signal) {
 int main(int argc, char *argv[])
 {
     //needed only in setsockopt
-    int                         opt                                     = TRUE;
+    int                         opt_ms                                  = TRUE;
+    int                         opt_cms                                 = TRUE;
     int                         clients_amount                          = 0;
-    int                         master_socket, new_server_socket; 
-    int                         new_client_socket, client_addr_len;
+    int                         conf_sockets_amount                     = 0;
+    int                         master_socket, conf_master_socket;
+    int                         new_client_socket, new_server_socket; 
+    int                         client_addr_len, conf_addr_len;
     int                         sdc, sds, max_sd, aux_max_sd;
+    //to keep track of the sockets used for configuration
+    int                         *conf_sockets_array;
     int                         activity, valread, i, j;
+    //buffers for each connection
     struct buffer               ***buffers;
     //set of socket descriptors
     fd_set                      readfds, writefds;
     sigset_t                    emptyset, blockset;
     //structs and mutex
     pthread_mutex_t             mtx                                     = PTHREAD_MUTEX_INITIALIZER;
-    struct sockaddr_in          client_address;
+    struct sockaddr_in          client_address, conf_address;
     struct DescriptorsArrays    descriptors_arrays;
     struct sigaction act = {
         .sa_handler = wake_handler,
@@ -66,41 +72,65 @@ int main(int argc, char *argv[])
     sigemptyset(&emptyset);
 
     //Set initial pointers to NULL
-    descriptors_arrays.client_sockets_read  = NULL;
-    descriptors_arrays.client_sockets_write = NULL;
-    descriptors_arrays.server_sockets_read  = NULL;
-    descriptors_arrays.server_sockets_write = NULL;
-    buffers                                 = NULL;
+    descriptors_arrays.client_sockets_read          = NULL;
+    descriptors_arrays.client_sockets_write         = NULL;
+    descriptors_arrays.server_sockets_read          = NULL;
+    descriptors_arrays.server_sockets_write         = NULL;
+    descriptors_arrays.client_commands_to_process   = NULL;
+    descriptors_arrays.server_commands_to_process   = NULL;
+    conf_sockets_array                              = NULL;
+    buffers                                         = NULL;
 
-    //create a master socket
+    //create a master socket for clients and a configuration master socket
     if( (master_socket = socket(AF_INET , SOCK_STREAM , 0)) == 0) {
         perror("master socket failed");
         exit(EXIT_FAILURE);
     }
 
-    //set master socket to allow multiple connections
-    if( setsockopt(master_socket, SOL_SOCKET, SO_REUSEADDR, (char *)&opt, sizeof(opt)) < 0 ) {
+    if( (conf_master_socket = socket(AF_INET , SOCK_STREAM , 0)) == 0) {
+        perror("master socket failed");
+        exit(EXIT_FAILURE);
+    }
+
+    //set master sockets to allow multiple connections
+    if( setsockopt(master_socket, SOL_SOCKET, SO_REUSEADDR, (char *)&opt_ms, sizeof(opt_ms)) < 0 ) {
+        perror("setsockopt failed");
+        exit(EXIT_FAILURE);
+    }
+    if( setsockopt(conf_master_socket, SOL_SOCKET, SO_REUSEADDR, (char *)&opt_cms, sizeof(opt_cms)) < 0 ) {
         perror("setsockopt failed");
         exit(EXIT_FAILURE);
     }
   
-    //type of socket for client and server
-    setSocketType( &client_address );
+    //type of socket for client and config
+    setSocketType( &client_address, PORT );
+    setSocketType( &conf_address, CONFPORT );
     client_addr_len = sizeof(client_address);
+    conf_addr_len   = sizeof(conf_address);
+
       
-    //bind the socket to localhost port 8888
+    //bind the master client socket to localhost port 8888, and the config socket to 7777
     if (bind(master_socket, (struct sockaddr *)&client_address, sizeof(client_address))<0) {
-        perror("bind failed");
+        perror("bind master socket failed");
+        exit(EXIT_FAILURE);
+    }
+    if (bind(conf_master_socket, (struct sockaddr *)&conf_address, sizeof(conf_address))<0) {
+        perror("bind conf socket failed");
         exit(EXIT_FAILURE);
     }
          
-    //try to specify maximum of MAXCLIENTS pending connections for the master socket. CHECK MAX AMOUNT OF FD...
+    //try to specify maximum of MAXCLIENTS pending connections for the master sockets. CHECK MAX AMOUNT OF FD...
     if (listen(master_socket, MAXCLIENTS) < 0) {
         perror("listen failed");
         exit(EXIT_FAILURE);
     }
+    if (listen(conf_master_socket, MAXCLIENTS) < 0) {
+        perror("listen failed");
+        exit(EXIT_FAILURE);
+    }
     
-    printf("Listening on port %d, waiting for connections...\n\n", PORT);
+    printf("Listening on port %d for POP3 clients...\n", PORT);
+    printf("Listening on port %d for configuration...\n\n", CONFPORT);
     
     while(TRUE){
         //clear the socket sets
@@ -108,14 +138,16 @@ int main(int argc, char *argv[])
         FD_ZERO(&readfds);
         FD_ZERO(&writefds);
   
-        //add master socket to sets
+        //add master socket and conf socket to sets
         FD_SET(master_socket, &readfds);
         FD_SET(master_socket, &writefds);
-        max_sd = master_socket;
+        FD_SET(conf_master_socket, &readfds);
+
+        max_sd = (master_socket > conf_master_socket) ? master_socket : conf_master_socket;
 
         //adds child sockets to set         
         //returns the highest file descriptor number, needed for the pselect function
-        aux_max_sd = addDescriptors( &descriptors_arrays, &readfds, &writefds, clients_amount);
+        aux_max_sd = addDescriptors( &descriptors_arrays, &conf_sockets_array, &readfds, &writefds, clients_amount, conf_sockets_amount);
         pthread_mutex_unlock(&mtx);
         if(aux_max_sd > max_sd)
             max_sd = aux_max_sd;
@@ -126,14 +158,18 @@ int main(int argc, char *argv[])
         if ((activity < 0) && (errno!=EINTR)){
             printf("select error");
         }
-          
-        //If something happened on the master socket , then its an incoming connection
+                  
+        //If something happened on the master socket , then its an incoming client connection
         if (FD_ISSET(master_socket, &readfds)) {        
-            handleNewConnection(master_socket, &client_address, &client_addr_len , &descriptors_arrays,  &readfds, &writefds , &mtx, &clients_amount, &buffers);
+            handleNewConnection(master_socket, &client_address, &client_addr_len , &descriptors_arrays , &mtx, &clients_amount, &buffers);
+        }
+        //If something happened on the config master socket , then its an incoming config connection
+        else if (FD_ISSET(conf_master_socket, &readfds)) {        
+            handleConfConnection(conf_master_socket, &conf_address, &conf_addr_len, &conf_sockets_array, &conf_sockets_amount, &mtx);
         }    
         //else it's some IO operation on some other socket
         else {
-            handleIOOperations(&descriptors_arrays, &readfds, &writefds, &buffers, &client_address, &client_addr_len, &clients_amount);
+            handleIOOperations(&descriptors_arrays, &conf_sockets_array, &readfds, &writefds, &buffers, &client_address, &conf_address, &client_addr_len, &conf_addr_len, clients_amount, conf_sockets_amount);
         }
     }
     return 0;

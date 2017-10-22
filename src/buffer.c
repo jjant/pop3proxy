@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <assert.h> 
 #include <string.h>
+#include <stdio.h>
 #include "buffer.h"
 
 inline void buffer_reset(buffer *b) {
@@ -41,10 +42,6 @@ char * buffer_read_ptr(buffer *b, size_t *nbyte) {
     size_t comm_end = 0;
     char *aux_ptr = b->read;
     for(int i = 0; aux_ptr <= b->limit && aux_ptr <= b->write && *aux_ptr!='\0'; aux_ptr++){
-        comm_end++;
-    }
-    aux_ptr++;
-    if(*aux_ptr='\0'){
         comm_end++;
     }
     if(comm_end < b->write - b->read){
