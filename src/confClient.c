@@ -16,10 +16,10 @@ int readString(char buffer[BUFSIZE]);
 
 //This is merely a prototype function, to test connectivity with server
 int main(int argc, char *argv[]) {
-  	struct sockaddr_in 	server_address;
-  	int 				exit_command			= 0;
-  	int 				sock;
-  	char 				initial_buffer[BUFSIZE];
+  	struct sockaddr_in 	 server_address;
+  	int 				         exit_command			= 0;
+  	int 				         sock;
+  	char 				         initial_buffer[BUFSIZE];
 	//Check for correct amount of args. For now, values are hard coded.
 	/*if (argc != 3) { // Test for correct number of arguments
     	perror("Parameter(s) must be <Server Address> <Server Port>\n");
@@ -36,7 +36,7 @@ int main(int argc, char *argv[]) {
   	}
 
   	// Create a reliable, stream socket
-  	sock = socket(AF_INET, SOCK_STREAM, 0);
+  	sock = socket(PF_INET, SOCK_STREAM, IPPROTO_SCTP);
   	if (sock < 0){
     	perror("socket failed");
     	exit(EXIT_FAILURE);

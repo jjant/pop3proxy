@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <unistd.h> 
@@ -17,6 +18,32 @@
 #include "buffer.h"
 
 pthread_t threadForConnection;
+extern struct Metrics  metrics;
+extern struct Settings settings;
+extern FILE *retrieved_mail;
+
+void setDefaultMetrics() {
+    metrics.concurrent_connections  = 0;
+    metrics.cc_on                   = 0;
+    metrics.historical_accesses     = 0;
+    metrics.ha_on                   = 0;
+    metrics.transfered_bytes        = 0;
+    metrics.tb_on                   = 0;
+}
+
+void setDefaultSettings() {
+    settings.origin_server = "127.0.0.1";
+    settings.error_file = "/dev/null";
+    //settings.pop3_address =;
+    //settings.management_address =;
+    settings.replacement_message = "Parte reemplazada...";
+    settings.censurable = "";
+    settings.management_port = 9090;
+    settings.pop3_port = 1110;
+    settings.origin_port = 110;
+    settings.cmd = "";
+    settings.version = "0.0.0";
+}
 
 void setSocketType( struct sockaddr_in* client_address, int port ) {
     //type of socket created for client
@@ -104,7 +131,7 @@ void handleConfConnection(int conf_master_socket, struct sockaddr_in *conf_addre
     return;
 }
 
-void handleNewConnection(int ms, struct sockaddr_in *ca, int *cal, struct DescriptorsArrays *dA, pthread_mutex_t *mtx, int *cAm, struct buffer ****b) {
+void handleNewConnection(int ms, struct sockaddr_in *ca, int *cal, struct DescriptorsArrays *dA, pthread_mutex_t *mtx, int *cAm, struct buffer ****b, struct InfoClient** info_clients) {
     struct ThreadArgs*  threadArgs;
     pthread_t           tId;
 
@@ -119,6 +146,7 @@ void handleNewConnection(int ms, struct sockaddr_in *ca, int *cal, struct Descri
     threadArgs->tId             = tId;
     threadArgs->mtx             = mtx;
     threadArgs->buffers         = b;
+    threadArgs->info_clients    = info_clients;
     //create new thread to resolve domain and connect to server. When it's done, add all file descriptors to arrays
     if ( pthread_create( &threadForConnection, NULL, &handleThreadForConnection, (void*) threadArgs) !=0 )
         perror("thread creation failed");
@@ -147,6 +175,7 @@ void* handleThreadForConnection(void* args) {
     hints.ai_socktype   = SOCK_STREAM;
 
     //in case of receiving an IP, the creation of this thread is unnecessary. Check later.
+    //change localhost and pop3 strings.
     if ((rv = getaddrinfo("localhost", "pop3", &hints, &servinfo)) != 0) {
         perror("DNS resolution failed");
         exit(EXIT_FAILURE);
@@ -198,11 +227,13 @@ void* handleThreadForConnection(void* args) {
         tArgs->dA->server_sockets_write[*(tArgs->clients_amount)-1]         = 0;
         tArgs->dA->client_commands_to_process[*(tArgs->clients_amount)-1]   = 0;
         tArgs->dA->server_commands_to_process[*(tArgs->clients_amount)-1]   = 0;
-    }    
+    }
+    (*(tArgs->info_clients))[*(tArgs->clients_amount)-1].retr_invoked = 0;
+    (*(tArgs->info_clients))[*(tArgs->clients_amount)-1].user_name    = NULL;     
     pthread_mutex_unlock(tArgs->mtx);
 
     printf("New connection: Client socket fd: %d , ip: %s , port: %d\n" , new_client_socket , inet_ntoa(tArgs->client_address->sin_addr) , ntohs(tArgs->client_address->sin_port));
-    printf("                Server socket fd: %d , ip: %s , port: %d\n" , new_server_socket , "127.0.0.1" , 110);
+    printf("                Server socket fd: %d , ip: %s , port: %d\n" , new_server_socket , settings.origin_server , settings.origin_port);
     
     //send signal to main thread to let it know that the domain name has been resolved and the connection has been made 
     pthread_kill( tArgs->tId, SIGUSR1);
@@ -212,6 +243,7 @@ void* handleThreadForConnection(void* args) {
     //return NULL;
 }
 
+//Reserves space for every structure requiered...
 void reserveSpace(struct ThreadArgs * tArgs){
     char            *aux_buf_c                        = NULL;
     char            *aux_buf_s                        = NULL;
@@ -223,6 +255,7 @@ void reserveSpace(struct ThreadArgs * tArgs){
     tArgs->dA->server_sockets_write         = realloc(tArgs->dA->server_sockets_write, (*(tArgs->clients_amount)+1)*sizeof(int));
     tArgs->dA->client_commands_to_process   = realloc(tArgs->dA->client_commands_to_process, (*(tArgs->clients_amount)+1)*sizeof(int));
     tArgs->dA->server_commands_to_process   = realloc(tArgs->dA->server_commands_to_process, (*(tArgs->clients_amount)+1)*sizeof(int)); 
+    *(tArgs->info_clients)                  = realloc(*(tArgs->info_clients), (*(tArgs->clients_amount)+1)*sizeof(struct InfoClient));
     *(tArgs->buffers)                       = realloc(*(tArgs->buffers), (*(tArgs->clients_amount)+1)*sizeof(struct buffer**));
     
     (*(tArgs->clients_amount))++;
@@ -260,7 +293,7 @@ void reserveSpace(struct ThreadArgs * tArgs){
 
 }
 
-void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf_sockets_array, fd_set *readfds, fd_set *writefds, struct buffer ****b, struct sockaddr_in *client_address, struct sockaddr_in *conf_address, int *client_addr_len, int *conf_addr_len, int clients_amount, int conf_sockets_amount) {
+void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf_sockets_array, fd_set *readfds, fd_set *writefds, struct buffer ****b, struct sockaddr_in *client_address, struct sockaddr_in *conf_address, int *client_addr_len, int *conf_addr_len, int clients_amount, int conf_sockets_amount, struct InfoClient** info_clients) {
     int             k, l, i, j, sdc, sds, conf_ds, str_size;
     char            aux_buf[BUFSIZE], aux_conf_buf[BUFSIZE];
     struct buffer   ***buffer                                   = *b;
@@ -270,6 +303,13 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf
         conf_ds = (*conf_sockets_array)[k];
         
         if (FD_ISSET( conf_ds , readfds )) {
+            int resp;
+            const char *ok_msg = "-OK-\n";
+            const char *er_msg = "-ERROR-\n";
+            const char *cc_msg = "-Concurrent connections-\n";
+            const char *ha_msg = "-Historical accesses-\n";
+            const char *tb_msg = "-Transfered Bytes-\n";
+
             printf("---config--- CONEXIÓN %d, ENTER READ\n", k);
             for( l = 0 ; l < BUFSIZE ; l++ ) {
                 aux_conf_buf[l] = '\0';
@@ -290,11 +330,33 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf
                 perror("---config--- read failed");
             }
             else {
-                //For now, it only echoes.
                 printf("---config--- Read something from admin\n");
-                if ( write( conf_ds , aux_conf_buf, strlen(aux_conf_buf)) != strlen(aux_conf_buf)) {
-                perror("---config--- write failed");       
-            }
+                //For now, it only echoes.
+                //We need to parse aux_conf_buf content and apply the configuration
+                resp = parseConfigCommand(aux_conf_buf);
+                switch (resp) {
+                case 0:     if ( write( conf_ds , er_msg, strlen(er_msg) ) != strlen(er_msg) ) {
+                                perror("---config--- write failed"); 
+                            }
+                            break;   
+                case 1:     if ( write( conf_ds , ok_msg, strlen(ok_msg) ) != strlen(ok_msg) ) {
+                                perror("---config--- write failed"); 
+                            }
+                            break;
+                case 2:     if ( write( conf_ds , cc_msg, strlen(cc_msg) ) != strlen(cc_msg) ) {
+                                perror("---config--- write failed"); 
+                            }
+                            break;
+                case 3:     if ( write( conf_ds , ha_msg, strlen(ha_msg) ) != strlen(ha_msg) ) {
+                                perror("---config--- write failed"); 
+                            }
+                            break;
+                case 4:     if ( write( conf_ds , tb_msg, strlen(tb_msg) ) != strlen(tb_msg) ) {
+                                perror("---config--- write failed"); 
+                            }
+                            break;
+                default:    break;
+                }
             }
 
         }
@@ -335,24 +397,54 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf
         }
         //writing to server
         if (FD_ISSET( sds , writefds ) ) {
+            enum Command { USER = 0, RETR, CAPA, OTHER };
+            int  cmd;
             printf("CONEXIÓN %d, ENTER WRITE TO SERVER\n", i);
             for( j = 0 ; j < BUFSIZE ; j++ ) {
                 aux_buf[j] = '\0';
             }
             size_t  rbytes  = 0;
-            uint8_t *ptr    = buffer_read_ptr(buffer[i][0], &rbytes);
+            //If server does not support pipelining, sends one command at a time
+            //If it does... do later
+            //buffer_read_ptr_for_client reads only one command
+            //To implement pipelining, do some kind of iteration and keep sending all commands
+            uint8_t *ptr    = buffer_read_ptr_for_client(buffer[i][0], &rbytes);
             memcpy(aux_buf,ptr,rbytes);
             if(strlen(aux_buf) > BUFSIZE){
                 aux_buf[BUFSIZE] = '\0';
             }
 
-            //in case of reading an entire command, add space for '\0'
-            if( (buffer[i][0]->read + rbytes) < buffer[i][0]->limit ){
-                rbytes++;
+            //Analyse sending command
+            cmd = parseClientCommand(aux_buf);
+            if( cmd == USER ){
+                //set name in info_client struct
+                //to see if command is 'USER ___', it needs to escape the first 5 chars
+                if (strlen(aux_buf) >= 6){
+                    (*info_clients)[i].user_name = malloc(strlen(aux_buf+5+1)*sizeof(char)); //+1 for \0
+                    memcpy((*info_clients)[i].user_name, aux_buf+5, strlen(aux_buf+5+1));
+                    (*info_clients)[i].retr_invoked = 0;
+                    printf("New user: %s\n", (*info_clients)[i].user_name);
+                }
+                (*info_clients)[i].capa_invoked = 0;
+            }
+            else if( cmd == RETR ){
+                //to see if command is 'RETR _', it needs to escape the first 6 chars (counting \n)
+                if (strlen(aux_buf) >= 7){
+                    (*info_clients)[i].retr_invoked = 1;
+                }
+                (*info_clients)[i].capa_invoked = 0;
+            }
+            else if ( cmd == CAPA ){
+                (*info_clients)[i].capa_invoked = 1;
+                (*info_clients)[i].retr_invoked = 0;
+            }
+            else {
+                (*info_clients)[i].capa_invoked = 0;
+                (*info_clients)[i].retr_invoked = 0;
             }
 
-            buffer_read_adv(buffer[i][0], rbytes);
 
+            buffer_read_adv(buffer[i][0], rbytes);
             if ( write( sds , aux_buf, strlen(aux_buf)) != strlen(aux_buf)) {
                 perror("write failed");       
             }
@@ -382,9 +474,6 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf
                     str_size++;
                 }
                 else break;
-            }
-            if ( str_size < BUFSIZE && aux_buf[str_size] == '\0'){
-                str_size++;
             }
 
             //write into server buffer
@@ -429,7 +518,24 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf
             }
             //Handle server conection
             int handleResponse = read( sds , aux_buf, size_to_write(buffer[i][1]));
-            
+
+            if ( (*info_clients)[i].capa_invoked == 1 ) {
+                if ( parseServerForCAPA(aux_buf) == 1 ) {
+                    (*info_clients)[i].pipeline_supported = 1;
+                }
+                else {
+                    (*info_clients)[i].pipeline_supported = 0;
+                }
+            }
+            else if ((*info_clients)[i].retr_invoked == 1 ){
+                //Transformation needs to be applied
+                
+                retrieved_mail = fopen("./retrieved_mail.txt", "at");
+                fprintf(retrieved_mail,"%s", aux_buf);
+                fclose(retrieved_mail);
+                printf("\nRETR invoked and response received\n\n");
+            }
+
             str_size = 0;
             for( j = 0; j < BUFSIZE; j++){
                 if(aux_buf[j]!='\0'){
@@ -441,7 +547,7 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf
                 str_size++;
             }
 
-            //write into server buffer
+            //write into client buffer
             size_t  wbytes  = 0;
             uint8_t *ptr    = buffer_write_ptr(buffer[i][1], &wbytes);
             if( wbytes < str_size ){
@@ -469,10 +575,164 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf
             }
             else {
                 printf("Read something from server\n");
+                //Here we should fork() or pthread_create() and call the transformation program 
                 (descriptors_arrays->server_commands_to_process[i])++;
                 descriptors_arrays->client_sockets_write[i] = descriptors_arrays->client_sockets_read[i]; 
             }
         }
-        printf("commands to process: %d\n", (descriptors_arrays->client_commands_to_process[i]));
+        printf("Client commands to process: %d\n", (descriptors_arrays->client_commands_to_process[i]));
     }    
+}
+
+int parseClientCommand(char b[]){
+    int     idx  = 0;
+    char    c;
+
+    c = b[idx];
+    switch( toupper(c) ){
+        case 'U':   if ( analyzeString( b+1, "SER" ) == 1 ) {
+                        return 0;
+                    }
+                    else 
+                        return 3;
+        case 'R':   if ( analyzeString( b+1, "ETR" ) == 1 )
+                        return 1;
+                    else 
+                        return 3;
+        case 'C':   if ( analyzeString( b+1, "APA" ) == 1 )
+                        return 2;
+                    else 
+                        return 3;
+        default:    return 3;
+    }
+}
+
+int analyzeString( const char buffer[], const char *command) {
+    enum StringState { READ = 0, RIGHT, WRONG };
+    
+    int  bufIndex  = 0; 
+    int  comIndex  = 0;
+    int  state     = READ;
+    while ( state == READ ){
+        char uppercaseLetter = toupper( buffer[bufIndex] );
+        if ( command[comIndex] == '\0' && ( uppercaseLetter == '\n' || uppercaseLetter == ' ' ) ) {
+            state = RIGHT;
+        }
+        else if ( uppercaseLetter == '\0' || ( uppercaseLetter != command[comIndex] ) ) {
+            state = WRONG;
+        }
+        comIndex++;
+        bufIndex++;
+    }
+    return state;
+}
+
+int parseServerForCAPA(char b[]){
+    for (int i = 0; b[i] != '.'; i++) {
+        if ( b[i] == 'P' ) {
+            if ( strncmp( b+i+1, "IPELINING", 9) == 0 ) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+int parseConfigCommand(char b[]){
+    if ( strncmp( b, "OS ", 3) == 0 ){
+        //Set origin server
+        settings.origin_server = malloc (strlen(b+3));
+        memcpy(settings.origin_server, b+3, strlen(b+3)+1);
+        printf("%s\n", settings.origin_server);
+        return 1;
+    }
+    else if ( strncmp( b, "EF ", 3) == 0 ){
+        //Set error file
+        settings.error_file = malloc (strlen(b+3));
+        memcpy(settings.error_file, b+3, strlen(b+3)+1);
+        printf("%s\n", settings.error_file);
+        return 1;
+    }
+    else if ( strncmp( b, "PA ", 3) == 0 ){
+        //Set POP3 address
+        return 1;
+    }
+    else if ( strncmp( b, "MA ", 3) == 0 ){
+        //Set management address
+        return 1;
+    }
+    else if ( strncmp( b, "RM ", 3) == 0 ){
+        //Set replacement message
+        settings.replacement_message = malloc (strlen(b+3));
+        memcpy(settings.replacement_message, b+3, strlen(b+3)+1);
+        return 1;
+    }
+    else if ( strncmp( b, "CT ", 3) == 0 ){
+        //Set censurable types
+        settings.censurable = malloc (strlen(b+3));
+        memcpy(settings.censurable, b+3, strlen(b+3)+1);
+        return 1;
+    }
+    else if ( strncmp( b, "MP ", 3) == 0 ){
+        //Set management port
+        return 1;
+    }
+    else if ( strncmp( b, "PP ", 3) == 0 ){
+        //Set POP3 port
+        return 1;
+    }
+    else if ( strncmp( b, "OP ", 3) == 0 ){
+        //Set origin port
+        return 1;
+    }
+    else if ( strncmp( b, "CD ", 3) == 0 ){
+        //Set command
+        settings.cmd = malloc (strlen(b+3));
+        memcpy(settings.cmd, b+3, strlen(b+3)+1);
+        return 1;
+    }
+    else if ( strncmp( b, "SCC", 3) == 0 ){
+        //Set concurrent connections metrics on
+        metrics.cc_on = 1;
+        return 1;
+    }
+    else if ( strncmp( b, "RCC", 3) == 0 ){
+        //Set concurrent connections metrics on (reset)
+        metrics.cc_on = 0;
+        return 1;
+    }
+    else if ( strncmp( b, "GCC", 3) == 0 ){
+        //Get concurrent connections metrics
+        return 2;
+    }
+    else if ( strncmp( b, "SHA", 3) == 0 ){
+        //Set historical accesses metrics on
+        metrics.ha_on = 1;
+        return 1;
+    }
+    else if ( strncmp( b, "RHA", 3) == 0 ){
+        //Set historical accesses metrics on (reset)
+        metrics.ha_on = 0;
+        return 1;
+    }
+    else if ( strncmp( b, "GHA", 3) == 0 ){
+        //Get historical accesses metrics
+        return 3;
+    }
+    else if ( strncmp( b, "STB", 3) == 0 ){
+        //Set transfered bytes metrics on
+        metrics.tb_on = 1;
+        return 1;
+    }
+    else if ( strncmp( b, "RTB", 3) == 0 ){
+        //Set transfered bytes metrics on (reset)
+        metrics.tb_on = 0;
+        return 1;
+    }
+    else if ( strncmp( b, "GTB", 3) == 0 ){
+        //Get transfered bytes metrics
+        return 4;
+    }
+    else
+        return 0;
 }

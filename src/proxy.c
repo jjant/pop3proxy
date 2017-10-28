@@ -15,6 +15,10 @@
 #include "proxyUtilities.h"
 #include "buffer.h"
 
+struct Metrics  metrics;
+struct Settings settings;
+FILE *retrieved_mail;
+
 /**
  * Received signal function to let know something happened in a file descriptor. Does nothing...
  */
@@ -34,8 +38,8 @@ static void finalize_pgm(const int signal) {
 int main(int argc, char *argv[])
 {
     //needed only in setsockopt
-    int                         opt_ms                                  = TRUE;
-    int                         opt_cms                                 = TRUE;
+    int                         opt_ms                                  = 1;
+    int                         opt_cms                                 = 1;
     int                         clients_amount                          = 0;
     int                         conf_sockets_amount                     = 0;
     int                         master_socket, conf_master_socket;
@@ -47,6 +51,8 @@ int main(int argc, char *argv[])
     int                         activity, valread, i, j;
     //buffers for each connection
     struct buffer               ***buffers;
+    //parsed information of every client
+    struct InfoClient           *info_clients;
     //set of socket descriptors
     fd_set                      readfds, writefds;
     sigset_t                    emptyset, blockset;
@@ -54,6 +60,7 @@ int main(int argc, char *argv[])
     pthread_mutex_t             mtx                                     = PTHREAD_MUTEX_INITIALIZER;
     struct sockaddr_in          client_address, conf_address;
     struct DescriptorsArrays    descriptors_arrays;
+    
     struct sigaction act = {
         .sa_handler = wake_handler,
     };
@@ -80,6 +87,10 @@ int main(int argc, char *argv[])
     descriptors_arrays.server_commands_to_process   = NULL;
     conf_sockets_array                              = NULL;
     buffers                                         = NULL;
+    info_clients                                    = NULL;
+
+    setDefaultMetrics();
+    setDefaultSettings();
 
     //create a master socket for clients and a configuration master socket
     if( (master_socket = socket(AF_INET , SOCK_STREAM , 0)) == 0) {
@@ -87,7 +98,8 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    if( (conf_master_socket = socket(AF_INET , SOCK_STREAM , 0)) == 0) {
+    //Config connection with SCTP
+    if( (conf_master_socket = socket(PF_INET , SOCK_STREAM , IPPROTO_SCTP)) == 0) {
         perror("master socket failed");
         exit(EXIT_FAILURE);
     }
@@ -103,8 +115,8 @@ int main(int argc, char *argv[])
     }
   
     //type of socket for client and config
-    setSocketType( &client_address, PORT );
-    setSocketType( &conf_address, CONFPORT );
+    setSocketType( &client_address, settings.pop3_port );
+    setSocketType( &conf_address, settings.management_port );
     client_addr_len = sizeof(client_address);
     conf_addr_len   = sizeof(conf_address);
 
@@ -129,10 +141,10 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
     
-    printf("Listening on port %d for POP3 clients...\n", PORT);
-    printf("Listening on port %d for configuration...\n\n", CONFPORT);
+    printf("Listening on port %d for POP3 clients...\n", settings.pop3_port);
+    printf("Listening on port %d for configuration...\n\n", settings.management_port);
     
-    while(TRUE){
+    while(1){
         //clear the socket sets
         pthread_mutex_lock(&mtx);
         FD_ZERO(&readfds);
@@ -154,14 +166,14 @@ int main(int argc, char *argv[])
 
         //wait for an activity on one of the sockets , timeout is NULL , so wait indefinitely
         activity = pselect( max_sd + 1 , &readfds , &writefds , NULL , NULL, &emptyset);
-    
+
         if ((activity < 0) && (errno!=EINTR)){
             printf("select error");
         }
                   
         //If something happened on the master socket , then its an incoming client connection
         if (FD_ISSET(master_socket, &readfds)) {        
-            handleNewConnection(master_socket, &client_address, &client_addr_len , &descriptors_arrays , &mtx, &clients_amount, &buffers);
+            handleNewConnection(master_socket, &client_address, &client_addr_len , &descriptors_arrays , &mtx, &clients_amount, &buffers, &info_clients);
         }
         //If something happened on the config master socket , then its an incoming config connection
         else if (FD_ISSET(conf_master_socket, &readfds)) {        
@@ -169,7 +181,7 @@ int main(int argc, char *argv[])
         }    
         //else it's some IO operation on some other socket
         else {
-            handleIOOperations(&descriptors_arrays, &conf_sockets_array, &readfds, &writefds, &buffers, &client_address, &conf_address, &client_addr_len, &conf_addr_len, clients_amount, conf_sockets_amount);
+            handleIOOperations(&descriptors_arrays, &conf_sockets_array, &readfds, &writefds, &buffers, &client_address, &conf_address, &client_addr_len, &conf_addr_len, clients_amount, conf_sockets_amount, &info_clients);
         }
     }
     return 0;

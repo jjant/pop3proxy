@@ -40,6 +40,8 @@ void buffer_write_adv(buffer *buffer, const ssize_t bytes);
 
 char * buffer_read_ptr(buffer *buffer, size_t *nbyte);
 
+char * buffer_read_ptr_for_client(buffer *buffer, size_t *nbyte);
+
 void buffer_read_adv(buffer *buffer, const ssize_t bytes);
 
 /**
