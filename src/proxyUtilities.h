@@ -14,6 +14,8 @@ struct DescriptorsArrays{
     int *server_sockets_write;
     int *client_commands_to_process;
     int *server_commands_to_process;
+    int *server_sends_closure;
+    int *client_needs_closure;
 };
 
 struct ThreadArgs{
@@ -37,12 +39,12 @@ struct InfoClient{
 };
 
 struct Metrics{
-	int concurrent_connections;
-	int cc_on;
-	int historical_accesses;
-	int ha_on;
-	int transfered_bytes;
-	int tb_on;
+	int 				concurrent_connections;
+	int 				cc_on;
+	int 				historical_accesses;
+	int 				ha_on;
+	unsigned long int 	transfered_bytes;
+	int 				tb_on;
 };
 
 struct Settings{
@@ -59,6 +61,7 @@ struct Settings{
 	char *version;				//0.0.0
 };
 
+void setNullPointers(struct DescriptorsArrays*, int**, struct buffer****, struct InfoClient**);
 
 void setDefaultMetrics();
 
@@ -98,22 +101,43 @@ void reserveSpace(struct ThreadArgs*);
 
 /**
  * Handles read and write operations, on files identified in descriptors arrays.
+ * This function calls the specific ones described below.
  */
 void handleIOOperations(struct DescriptorsArrays*, int**, fd_set*, fd_set*, struct buffer****, struct sockaddr_in* , struct sockaddr_in*, int*, int*, int, int, struct InfoClient**);
 
 /**
- * Analyse command to see if client wrote USER, RETR, or CAPA
+ * Handles managemente IO operations. Uses parsers to analyze requests for configuration.
  */
-int parseClientCommand(char b[]);
-int analyzeString( const char b[], const char*);
+void handleManagementRequests(int, int**, struct sockaddr_in*, int*);
 
 /**
- * Search for PIPELINE capability
+ * Reads from buffer and writes to the client file descriptor.
  */
-int parseServerForCAPA(char b[]);
+void writeToClient(int, struct DescriptorsArrays*, struct buffer****);
 
 /**
- * Parse command of configuration and apply it
+ * Reads commands from the client file descriptor, analyses them and writes them to the buffer .
  */
-int parseConfigCommand(char b[]);
+void readFromClient(int i, struct DescriptorsArrays*, struct buffer****, struct sockaddr_in*, int*);
+
+/**
+ * Reads from buffer and writes to the server file descriptor.
+ */
+void writeToServer(int, struct DescriptorsArrays*, struct buffer****, struct InfoClient**);
+
+/**
+ * When it's created, a child process handles the mail transformation.
+ */
+void handleChildProcess(int);
+
+/**
+ * Reads responses from server, and sends them to the client or to child process accordingly.
+ */
+void readFromServer(int, struct DescriptorsArrays*, struct buffer****, struct sockaddr_in*, int*, struct InfoClient**);
+
+/**
+ * Reads from pipe when child process retrieved transformed mail and writes to the client file descriptor.
+ */
+void readFromPipe(int, struct DescriptorsArrays*, struct buffer****);
+
 #endif

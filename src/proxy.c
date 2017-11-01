@@ -17,13 +17,16 @@
 
 struct Metrics  metrics;
 struct Settings settings;
-FILE *retrieved_mail;
+FILE            *retrieved_mail;
+FILE            *transformed_mail;
+int             **pipes_fd;
 
 /**
- * Received signal function to let know something happened in a file descriptor. Does nothing...
+ * Received signal function to let know something happened in a file descriptor.
+ * It's needed to unlock select().
  */
 static void wake_handler(const int signal) {
-    printf("SIGNAL RECEIVED. DNS resolution and connection succeeded.\n\n");
+    printf("SIGNAL RECEIVED. Connection succeeded.\n\n");
     return;
 }
 
@@ -60,7 +63,7 @@ int main(int argc, char *argv[])
     pthread_mutex_t             mtx                                     = PTHREAD_MUTEX_INITIALIZER;
     struct sockaddr_in          client_address, conf_address;
     struct DescriptorsArrays    descriptors_arrays;
-    
+
     struct sigaction act = {
         .sa_handler = wake_handler,
     };
@@ -78,22 +81,12 @@ int main(int argc, char *argv[])
     sigaction(SIGINT, &finalize, NULL);
     sigemptyset(&emptyset);
 
-    //Set initial pointers to NULL
-    descriptors_arrays.client_sockets_read          = NULL;
-    descriptors_arrays.client_sockets_write         = NULL;
-    descriptors_arrays.server_sockets_read          = NULL;
-    descriptors_arrays.server_sockets_write         = NULL;
-    descriptors_arrays.client_commands_to_process   = NULL;
-    descriptors_arrays.server_commands_to_process   = NULL;
-    conf_sockets_array                              = NULL;
-    buffers                                         = NULL;
-    info_clients                                    = NULL;
-
+    setNullPointers(&descriptors_arrays, &conf_sockets_array, &buffers, &info_clients);
     setDefaultMetrics();
     setDefaultSettings();
 
     //create a master socket for clients and a configuration master socket
-    if( (master_socket = socket(AF_INET , SOCK_STREAM , 0)) == 0) {
+    if( (master_socket = socket(AF_INET , SOCK_STREAM , IPPROTO_TCP)) == 0) {
         perror("master socket failed");
         exit(EXIT_FAILURE);
     }
