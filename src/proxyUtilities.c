@@ -61,7 +61,38 @@ void setDefaultSettings() {
     settings.pop3_port = 1110;
     settings.origin_port = 110;
     settings.cmd = "";
-    settings.version = "0.0.0\n";
+    settings.version = "0.7.0\n";
+}
+
+void configureSocket(int* sock, int dom, int type, int prot, int level, int optname, int *optval, struct sockaddr_in *address, int *addr_len, int port) {
+
+    //create a master socket for clients and a configuration master socket
+    if( (*sock = socket(dom , type , prot)) == 0) {
+        perror("master socket failed");
+        exit(EXIT_FAILURE);
+    }
+    //set master sockets to allow multiple connections
+    if( setsockopt(*sock, level, optname, (char *)optval, sizeof(*optval)) < 0 ) {
+        perror("setsockopt failed");
+        exit(EXIT_FAILURE);
+    }
+
+    //type of socket for client and config
+    setSocketType( address, port );
+    *addr_len = sizeof(*address);
+
+   
+    //bind the master client socket to localhost port 1110, and the config socket to 9090
+    if (bind(*sock, (struct sockaddr *)address, sizeof(*address))<0) {
+        perror("bind master socket failed");
+        exit(EXIT_FAILURE);
+    }
+         
+    //try to specify maximum of MAXCLIENTS pending connections for the master sockets. CHECK MAX AMOUNT OF FD...
+    if (listen(*sock, MAXCLIENTS) < 0) {
+        perror("listen failed");
+        exit(EXIT_FAILURE);
+    }
 }
 
 void setSocketType( struct sockaddr_in* client_address, int port ) {
@@ -286,16 +317,17 @@ void* handleThreadForConnection(void* args) {
         reserveSpace(tArgs);
     }
 
-    tArgs->dA->client_sockets_read[i]          = new_client_socket;
-    tArgs->dA->server_sockets_read[i]          = new_server_socket;
-    tArgs->dA->client_sockets_write[i]         = 0;
-    tArgs->dA->server_sockets_write[i]         = 0;
-    tArgs->dA->client_commands_to_process[i]   = 0;
-    tArgs->dA->server_commands_to_process[i]   = 0;
-    tArgs->dA->server_sends_closure[i]         = 0;
-    tArgs->dA->client_needs_closure[i]         = 0;
-    (*(tArgs->info_clients))[i].retr_invoked   = 0;
-    (*(tArgs->info_clients))[i].user_name      = NULL;
+    tArgs->dA->client_sockets_read[i]               = new_client_socket;
+    tArgs->dA->server_sockets_read[i]               = new_server_socket;
+    tArgs->dA->client_sockets_write[i]              = 0;
+    tArgs->dA->server_sockets_write[i]              = 0;
+    tArgs->dA->client_commands_to_process[i]        = 0;
+    tArgs->dA->server_commands_to_process[i]        = 0;
+    tArgs->dA->server_sends_closure[i]              = 0;
+    tArgs->dA->client_needs_closure[i]              = 0;
+    (*(tArgs->info_clients))[i].retr_invoked        = 0;
+    (*(tArgs->info_clients))[i].available_to_write  = 0;
+    (*(tArgs->info_clients))[i].user_name           = NULL;
     for( int j = 0; j < 4; j++ ) {
         pipes_fd[i][j] = -1;
     }
@@ -367,7 +399,7 @@ void reserveSpace(struct ThreadArgs * tArgs){
 
 }
 
-void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf_sockets_array, fd_set *readfds, fd_set *writefds, struct buffer ****b, struct sockaddr_in *client_address, struct sockaddr_in *conf_address, int *client_addr_len, int *conf_addr_len, int clients_amount, int conf_sockets_amount, struct InfoClient** info_clients) {
+void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf_sockets_array, fd_set *readfds, fd_set *writefds, struct buffer ****b, struct sockaddr_in *client_address, struct sockaddr_in *conf_address, int *client_addr_len, int *conf_addr_len, int clients_amount, int conf_sockets_amount, struct InfoClient** info_clients, int* master_socket, int* conf_master_socket, int *opt_ms, int *opt_cms) {
     int             i, str_size;
     char            aux_buf[BUFSIZE];
     struct buffer   ***buffer           = *b;
@@ -375,7 +407,7 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf
     //handle configuration admins
     for (int k = 0; k < conf_sockets_amount; k++ ){
         if (FD_ISSET( (*conf_sockets_array)[k] , readfds ))
-            handleManagementRequests(k, conf_sockets_array, conf_address, conf_addr_len);
+            handleManagementRequests(k, conf_sockets_array, conf_address, conf_addr_len, client_address, client_addr_len, master_socket, conf_master_socket, opt_ms, opt_cms);
     }
 
     //handle pop3 clients
@@ -386,12 +418,12 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf
             writeToClient(i, descriptors_arrays, b); 
         }
         //writing to server
-        if (FD_ISSET( descriptors_arrays->server_sockets_write[i] , writefds ) && ( (*info_clients)[i].pipeline_supported || !FD_ISSET(descriptors_arrays->server_sockets_read[i], readfds) ) ) {
+        if (FD_ISSET( descriptors_arrays->server_sockets_write[i] , writefds ) && ( (*info_clients)[i].pipeline_supported == 1 || !FD_ISSET(descriptors_arrays->server_sockets_read[i], readfds) ) ) {
             writeToServer(i, descriptors_arrays, b, info_clients);
         }
 
         //reading requests from client  
-        if ( FD_ISSET(descriptors_arrays->client_sockets_read[i] , readfds) ) { 
+        if ( FD_ISSET(descriptors_arrays->client_sockets_read[i] , readfds) && (*info_clients)[i].available_to_write == 1 ) { 
             readFromClient(i, descriptors_arrays, b, client_address, client_addr_len);
             
         }
@@ -417,9 +449,10 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf
 
                 printf("\nFORK\n");
                 parent_pid = getpid();
-                pid = fork ();
+                pid = fork();
                 if (pid ==  0) {
                     // This is the child process.
+                    setEnvironmentVars((*info_clients)[i].user_name);                    
                     handleChildProcess(i);
                     printf("Child terminated\n\n");
                     exit(0);
@@ -464,16 +497,20 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf
     } 
 }
 
-void handleManagementRequests(int k, int **conf_sockets_array, struct sockaddr_in *conf_address, int *conf_addr_len) {
-    char aux_conf_buf[BUFSIZE];
-    int conf_ds, resp;
+void handleManagementRequests(int k, int **conf_sockets_array, struct sockaddr_in *conf_address, int *conf_addr_len, struct sockaddr_in *client_address, int *client_addr_len, int *master_socket, int *conf_master_socket, int *opt_ms, int *opt_cms) {
+    enum    Response                { ERROR = 0, OK, GCC, GHA, GTB, VN, PP, MP };
+    char    aux_conf_buf[BUFSIZE];
+    int     conf_ds, resp;
 
     conf_ds = (*conf_sockets_array)[k];
-            const char  *ok_msg = "-OK-\n";
-            const char  *er_msg = "-ERROR-\n";
-            const char  *cc_msg = "-Concurrent connections-\n";
-            const char  *ha_msg = "-Historical accesses-\n";
-            const char  *tb_msg = "-Transfered Bytes-\n";
+            const char  *ok_msg  = "-OK-\n";
+            const char  *er_msg  = "-ERROR-\n";
+            const char  *cc_msg  = "-Concurrent connections-\n";
+            const char  *ha_msg  = "-Historical accesses-\n";
+            const char  *tb_msg  = "-Transfered Bytes-\n";
+            const char  *cc_off  = "-Concurrent connections metrics are off-\n";
+            const char  *ha_off  = "-Historical accesses metrics are off-\n";
+            const char  *tb_off  = "-Transfered Bytes metrics are off-\n";
             //Max number must fit in array, plus 1 space for \n
             //for int 
             char        number_of_cc[11];
@@ -513,43 +550,67 @@ void handleManagementRequests(int k, int **conf_sockets_array, struct sockaddr_i
                 //We need to parse aux_conf_buf content and apply the configuration
                 resp = parseConfigCommand(aux_conf_buf);
                 switch (resp) {
-                case 0:     if ( write( conf_ds , er_msg, strlen(er_msg) ) != strlen(er_msg) ) {
+                case ERROR: if ( write( conf_ds , er_msg, strlen(er_msg) ) != strlen(er_msg) ) {
                                 perror("---config--- write failed"); 
                             }
                             break;   
-                case 1:     if ( write( conf_ds , ok_msg, strlen(ok_msg) ) != strlen(ok_msg) ) {
+                case OK:    if ( write( conf_ds , ok_msg, strlen(ok_msg) ) != strlen(ok_msg) ) {
                                 perror("---config--- write failed"); 
                             }
                             break;
-                case 2:     if ( write( conf_ds , cc_msg, strlen(cc_msg) ) != strlen(cc_msg) ) {
-                                perror("---config--- write failed"); 
+                case GCC:   if(metrics.cc_on == 1) {
+                                if ( write( conf_ds , cc_msg, strlen(cc_msg) ) != strlen(cc_msg) )
+                                    perror("---config--- write failed"); 
+                                snprintf( number_of_cc, 11, "%d", metrics.concurrent_connections );
+                                number_of_cc[strlen(number_of_cc)] = '\n';
+                                printf("%s\n", number_of_cc);
+                                if ( write( conf_ds , number_of_cc, strlen(number_of_cc) ) != strlen(number_of_cc) )
+                                    perror("---config--- write failed"); 
                             }
-                            snprintf( number_of_cc, 11, "%d", metrics.concurrent_connections );
-                            number_of_cc[strlen(number_of_cc)] = '\n';
-                            printf("%s\n", number_of_cc);
-                            if ( write( conf_ds , number_of_cc, strlen(number_of_cc) ) != strlen(number_of_cc) ) {
+                            else{
+                                if ( write( conf_ds , cc_off, strlen(cc_off) ) != strlen(cc_off) )
+                                    perror("---config--- write failed"); 
+                            }
+                            break;
+                case GHA:   if(metrics.ha_on == 1) {
+                                if ( write( conf_ds , ha_msg, strlen(ha_msg) ) != strlen(ha_msg) )
+                                    perror("---config--- write failed"); 
+                                snprintf( number_of_ha, 11, "%d", metrics.historical_accesses );
+                                number_of_ha[strlen(number_of_ha)] = '\n';
+                                if ( write( conf_ds , number_of_ha, strlen(number_of_ha) ) != strlen(number_of_ha) )
+                                    perror("---config--- write failed"); 
+                            }
+                            else {
+                                if ( write( conf_ds , ha_off, strlen(ha_off) ) != strlen(ha_off) )
+                                    perror("---config--- write failed");    
+                            }
+                            break;
+                case GTB:   if(metrics.tb_on == 1) {
+                                if ( write( conf_ds , tb_msg, strlen(tb_msg) ) != strlen(tb_msg) )
+                                    perror("---config--- write failed"); 
+                                snprintf( number_of_tb, 21, "%lu", metrics.transfered_bytes );
+                                number_of_tb[strlen(number_of_tb)] = '\n';
+                                if ( write( conf_ds , number_of_tb, strlen(number_of_tb) ) != strlen(number_of_tb) )
+                                    perror("---config--- write failed"); 
+                            }
+                            else {
+                                if ( write( conf_ds , tb_off, strlen(tb_off) ) != strlen(tb_off) )
+                                    perror("---config--- write failed");
+                            }
+                            break;
+                case VN:    if ( write( conf_ds , settings.version, strlen(settings.version) ) != strlen(settings.version) ) {
                                 perror("---config--- write failed"); 
                             }
                             break;
-                case 3:     if ( write( conf_ds , ha_msg, strlen(ha_msg) ) != strlen(ha_msg) ) {
-                                perror("---config--- write failed"); 
-                            }
-                            snprintf( number_of_ha, 11, "%d", metrics.historical_accesses );
-                            number_of_ha[strlen(number_of_ha)] = '\n';
-                            if ( write( conf_ds , number_of_ha, strlen(number_of_ha) ) != strlen(number_of_ha) ) {
+                case PP:    close(*master_socket);
+                            configureSocket(master_socket, AF_INET, SOCK_STREAM, IPPROTO_TCP, SOL_SOCKET, SO_REUSEADDR, opt_ms, client_address, client_addr_len, settings.pop3_port);
+                            if ( write( conf_ds , ok_msg, strlen(ok_msg) ) != strlen(ok_msg) ) {
                                 perror("---config--- write failed"); 
                             }
                             break;
-                case 4:     if ( write( conf_ds , tb_msg, strlen(tb_msg) ) != strlen(tb_msg) ) {
-                                perror("---config--- write failed"); 
-                            }
-                            snprintf( number_of_tb, 21, "%lu", metrics.transfered_bytes );
-                            number_of_tb[strlen(number_of_tb)] = '\n';
-                            if ( write( conf_ds , number_of_tb, strlen(number_of_tb) ) != strlen(number_of_tb) ) {
-                                perror("---config--- write failed"); 
-                            }
-                            break;
-                case 5:     if ( write( conf_ds , settings.version, strlen(settings.version) ) != strlen(settings.version) ) {
+                case MP:    close(*conf_master_socket);
+                            configureSocket(conf_master_socket, PF_INET, SOCK_STREAM, IPPROTO_SCTP, SOL_SOCKET, SO_REUSEADDR, opt_cms, conf_address, conf_addr_len, settings.management_port);
+                            if ( write( conf_ds , ok_msg, strlen(ok_msg) ) != strlen(ok_msg) ) {
                                 perror("---config--- write failed"); 
                             }
                             break;
@@ -612,7 +673,8 @@ void readFromClient(int i, struct DescriptorsArrays *descriptors_arrays, struct 
         printf("CONNECTION %d, CLIENT CLOSES\n", i);
         close( descriptors_arrays->client_sockets_read[i] );
         close( descriptors_arrays->server_sockets_read[i] );
-        metrics.concurrent_connections--;
+        if(metrics.concurrent_connections > 0)
+            metrics.concurrent_connections--;
         descriptors_arrays->client_sockets_read[i] = 0;
         descriptors_arrays->server_sockets_read[i] = 0;
         buffer_reset(buffer[i][0]);
@@ -737,7 +799,6 @@ void handleChildProcess(int i) {
 
     while ( (pread = read(pipes_fd[i][0], child_aux_buf_in, BUFSIZE)) > 0 ) {
         printf("pread: %d\n\n", pread);
-        printf("------------------> %s\n", child_aux_buf_in );
         
         fwrite(child_aux_buf_in, 1, pread, retrieved_mail);
                         
@@ -750,6 +811,8 @@ void handleChildProcess(int i) {
     }
     fclose(retrieved_mail);
     fclose(transformed_mail);
+
+    system("./testT");
 
     //Send transformed mail to other pipe and then to client's buffer
     transformed_mail = fopen(file_path_transf, "r");
@@ -797,7 +860,8 @@ void readFromServer(int i, struct DescriptorsArrays *descriptors_arrays, struct 
         close( descriptors_arrays->server_sockets_read[i] );    
         descriptors_arrays->server_sockets_read[i] = 0;
         buffer_reset(buffer[i][0]);
-        metrics.concurrent_connections--;
+        if(metrics.concurrent_connections > 0)
+            metrics.concurrent_connections--;
         //wait for second pipe to receive all data and tell client to close
         if(  pipes_fd[i][2] > -1 ) {
             descriptors_arrays->server_sends_closure[i] = 1;
@@ -856,6 +920,7 @@ void readFromServer(int i, struct DescriptorsArrays *descriptors_arrays, struct 
             buffer_write_adv(buffer[i][1], str_size);
 
             descriptors_arrays->client_sockets_write[i] = descriptors_arrays->client_sockets_read[i];
+            (*info_clients)[i].available_to_write = 1;
         }
     }
 }
@@ -904,4 +969,13 @@ void readFromPipe(int i, struct DescriptorsArrays *descriptors_arrays, struct bu
         pipes_fd[i][2] = -1;
         pipes_fd[i][3] = -1;
     }
+}
+
+void setEnvironmentVars( const char *name ) {   
+    setenv("FILTER_MEDIAS", settings.censurable, 1);
+    setenv("FILTER_MSG", settings.replacement_message, 1);
+    setenv("POP3FILTER_VERSION", settings.version, 1);
+    setenv("POP3_SERVER", settings.origin_server, 1); 
+    if(name != NULL)
+        setenv("POP3_USERNAME", name, 1);
 }

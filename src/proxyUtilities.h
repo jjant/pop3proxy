@@ -32,6 +32,7 @@ struct ThreadArgs{
 };
 
 struct InfoClient{
+	int 	available_to_write;
 	int 	retr_invoked;
 	int 	capa_invoked;
 	int 	pipeline_supported;
@@ -66,6 +67,8 @@ void setNullPointers(struct DescriptorsArrays*, int**, struct buffer****, struct
 void setDefaultMetrics();
 
 void setDefaultSettings();
+
+void configureSocket(int*, int, int, int, int, int, int*, struct sockaddr_in*, int*, int);
 
 /**
  * Configures the type of socket for clients
@@ -103,12 +106,12 @@ void reserveSpace(struct ThreadArgs*);
  * Handles read and write operations, on files identified in descriptors arrays.
  * This function calls the specific ones described below.
  */
-void handleIOOperations(struct DescriptorsArrays*, int**, fd_set*, fd_set*, struct buffer****, struct sockaddr_in* , struct sockaddr_in*, int*, int*, int, int, struct InfoClient**);
+void handleIOOperations(struct DescriptorsArrays*, int**, fd_set*, fd_set*, struct buffer****, struct sockaddr_in* , struct sockaddr_in*, int*, int*, int, int, struct InfoClient**, int*, int*, int*, int*);
 
 /**
  * Handles managemente IO operations. Uses parsers to analyze requests for configuration.
  */
-void handleManagementRequests(int, int**, struct sockaddr_in*, int*);
+void handleManagementRequests(int, int**, struct sockaddr_in*, int*, struct sockaddr_in*, int*, int*, int*, int*, int*);
 
 /**
  * Reads from buffer and writes to the client file descriptor.
@@ -139,5 +142,7 @@ void readFromServer(int, struct DescriptorsArrays*, struct buffer****, struct so
  * Reads from pipe when child process retrieved transformed mail and writes to the client file descriptor.
  */
 void readFromPipe(int, struct DescriptorsArrays*, struct buffer****);
+
+void setEnvironmentVars(const char*);
 
 #endif

@@ -21,4 +21,6 @@ int parseConfigCommand(char b[]);
 
 int stringToInt(char b[]);
 
+void intToString(int n, char[]);
+
 #endif

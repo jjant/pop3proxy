@@ -85,54 +85,8 @@ int main(int argc, char *argv[])
     setDefaultMetrics();
     setDefaultSettings();
 
-    //create a master socket for clients and a configuration master socket
-    if( (master_socket = socket(AF_INET , SOCK_STREAM , IPPROTO_TCP)) == 0) {
-        perror("master socket failed");
-        exit(EXIT_FAILURE);
-    }
-
-    //Config connection with SCTP
-    if( (conf_master_socket = socket(PF_INET , SOCK_STREAM , IPPROTO_SCTP)) == 0) {
-        perror("master socket failed");
-        exit(EXIT_FAILURE);
-    }
-
-    //set master sockets to allow multiple connections
-    if( setsockopt(master_socket, SOL_SOCKET, SO_REUSEADDR, (char *)&opt_ms, sizeof(opt_ms)) < 0 ) {
-        perror("setsockopt failed");
-        exit(EXIT_FAILURE);
-    }
-    if( setsockopt(conf_master_socket, SOL_SOCKET, SO_REUSEADDR, (char *)&opt_cms, sizeof(opt_cms)) < 0 ) {
-        perror("setsockopt failed");
-        exit(EXIT_FAILURE);
-    }
-  
-    //type of socket for client and config
-    setSocketType( &client_address, settings.pop3_port );
-    setSocketType( &conf_address, settings.management_port );
-    client_addr_len = sizeof(client_address);
-    conf_addr_len   = sizeof(conf_address);
-
-      
-    //bind the master client socket to localhost port 8888, and the config socket to 7777
-    if (bind(master_socket, (struct sockaddr *)&client_address, sizeof(client_address))<0) {
-        perror("bind master socket failed");
-        exit(EXIT_FAILURE);
-    }
-    if (bind(conf_master_socket, (struct sockaddr *)&conf_address, sizeof(conf_address))<0) {
-        perror("bind conf socket failed");
-        exit(EXIT_FAILURE);
-    }
-         
-    //try to specify maximum of MAXCLIENTS pending connections for the master sockets. CHECK MAX AMOUNT OF FD...
-    if (listen(master_socket, MAXCLIENTS) < 0) {
-        perror("listen failed");
-        exit(EXIT_FAILURE);
-    }
-    if (listen(conf_master_socket, MAXCLIENTS) < 0) {
-        perror("listen failed");
-        exit(EXIT_FAILURE);
-    }
+    configureSocket(&master_socket, AF_INET, SOCK_STREAM, IPPROTO_TCP, SOL_SOCKET, SO_REUSEADDR, &opt_ms, &client_address, &client_addr_len, settings.pop3_port);
+    configureSocket(&conf_master_socket, PF_INET, SOCK_STREAM, IPPROTO_SCTP, SOL_SOCKET, SO_REUSEADDR, &opt_cms, &conf_address, &conf_addr_len, settings.management_port);
     
     printf("Listening on port %d for POP3 clients...\n", settings.pop3_port);
     printf("Listening on port %d for configuration...\n\n", settings.management_port);
@@ -145,7 +99,7 @@ int main(int argc, char *argv[])
   
         //add master socket and conf socket to sets
         FD_SET(master_socket, &readfds);
-        FD_SET(master_socket, &writefds);
+        //FD_SET(master_socket, &writefds);
         FD_SET(conf_master_socket, &readfds);
 
         max_sd = (master_socket > conf_master_socket) ? master_socket : conf_master_socket;
@@ -174,7 +128,7 @@ int main(int argc, char *argv[])
         }    
         //else it's some IO operation on some other socket
         else {
-            handleIOOperations(&descriptors_arrays, &conf_sockets_array, &readfds, &writefds, &buffers, &client_address, &conf_address, &client_addr_len, &conf_addr_len, clients_amount, conf_sockets_amount, &info_clients);
+            handleIOOperations(&descriptors_arrays, &conf_sockets_array, &readfds, &writefds, &buffers, &client_address, &conf_address, &client_addr_len, &conf_addr_len, clients_amount, conf_sockets_amount, &info_clients, &master_socket, &conf_master_socket, &opt_ms, &opt_cms);
         }
     }
     return 0;
