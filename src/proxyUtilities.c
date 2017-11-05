@@ -452,7 +452,9 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf
                 pid = fork();
                 if (pid ==  0) {
                     // This is the child process.
-                    setEnvironmentVars((*info_clients)[i].user_name);                    
+                    //Sends errors to specific file instead of stderr
+                    freopen(settings.error_file, "a", stderr);
+                    setEnvironmentVars(i, (*info_clients)[i].user_name);                    
                     handleChildProcess(i);
                     printf("Child terminated\n\n");
                     exit(0);
@@ -793,7 +795,7 @@ void handleChildProcess(int i) {
     file_path_retr[17]      = i + 48;
     file_path_transf[19]    = i + 48;
     retrieved_mail          = fopen(file_path_retr, "a");
-    transformed_mail        = fopen(file_path_transf, "a");
+    //transformed_mail        = fopen(file_path_transf, "a");
        
     printf("\nRETR invoked and child process created\n\n");
 
@@ -802,16 +804,17 @@ void handleChildProcess(int i) {
         
         fwrite(child_aux_buf_in, 1, pread, retrieved_mail);
                         
-        //Here we need to exec() and transform mail
-        fwrite(child_aux_buf_in, 1, pread, transformed_mail);
+        //Testing, extern program should do something.
+        //fwrite(child_aux_buf_in, 1, pread, transformed_mail);
 
         for( int p = 0 ; p < BUFSIZE ; p++ ) {
             child_aux_buf_in[p]     = '\0';
         }
     }
     fclose(retrieved_mail);
-    fclose(transformed_mail);
+    //fclose(transformed_mail);
 
+    //This is where we should call the transformation program and that program should change the files.
     system("./testT");
 
     //Send transformed mail to other pipe and then to client's buffer
@@ -971,7 +974,11 @@ void readFromPipe(int i, struct DescriptorsArrays *descriptors_arrays, struct bu
     }
 }
 
-void setEnvironmentVars( const char *name ) {   
+void setEnvironmentVars( int i, const char *name ) {
+    char b[11];
+    intToString(i, b);
+    printf("---> %s\n", b);
+    setenv("CLIENT_NUM", b, 1);
     setenv("FILTER_MEDIAS", settings.censurable, 1);
     setenv("FILTER_MSG", settings.replacement_message, 1);
     setenv("POP3FILTER_VERSION", settings.version, 1);

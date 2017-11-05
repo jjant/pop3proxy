@@ -202,6 +202,10 @@ void intToString(int n, char b[]){
     //Max int enters in array size 10 + \0
     for( int j = 0; j < 11; j++)
         b[j] = '\0';
+    if(n == 0) {
+        b[i] = 48;
+        return;
+    }
     while(n > 0){
         aux = (n % 10) + 48;
         for( int j = i; j > 0; j--)

@@ -143,6 +143,6 @@ void readFromServer(int, struct DescriptorsArrays*, struct buffer****, struct so
  */
 void readFromPipe(int, struct DescriptorsArrays*, struct buffer****);
 
-void setEnvironmentVars(const char*);
+void setEnvironmentVars(int, const char*);
 
 #endif
