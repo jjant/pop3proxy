@@ -41,9 +41,10 @@ int main() {
   }
 
 end:
-  fwrite(buffer, CHARACTER_SIZE, buffer_index+2, transformed_mail);
+  fwrite(buffer, CHARACTER_SIZE, buffer_index + 2, transformed_mail);
 
+  fclose(retrieved_mail);
   fclose(transformed_mail);
-  mime_parser(filter_medias, filter_message, client_number, retrieved_mail);
+  mime_parser(filter_medias, filter_message, client_number, buffer_index + 2);
   return 0;
 }

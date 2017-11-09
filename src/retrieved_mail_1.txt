@@ -1,3 +1,4 @@
++OK 2 messages (320 octets)
 Date: Sun, 5 Nov 2017 18:59:10 -0300
 From: juan <juan@juan-virtual-machine>
 To: juan
@@ -86,4 +87,3 @@ Content-Disposition: attachment; filename=hola.txt
 hola mundo!
 
 --MP_/XAkM/CBycDJWEUGbQ_LLaw3--
-
