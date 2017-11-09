@@ -49,7 +49,7 @@ char * get_transformed_mail_file_path(char client_number) {
   	char * transformed_mail_file_path = malloc(strlen(prototype_path));
     strcpy(transformed_mail_file_path, prototype_path);
   	#define TRANSFORMED_MAIL_CLIENT_INDEX 19
-    transformed_mail_file_path[RETRIEVED_MAIL_CLIENT_INDEX] = client_number;
+    transformed_mail_file_path[TRANSFORMED_MAIL_CLIENT_INDEX] = client_number;
 
     return transformed_mail_file_path;
 }

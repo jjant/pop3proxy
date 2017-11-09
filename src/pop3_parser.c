@@ -4,6 +4,7 @@
 #include <string.h>
 #include <unistd.h>
 #include "parser_utils.h"
+#include "mime_parser.h"
 
 #define CHARACTER_SIZE 1
 #define READ_COUNT POP3_TOP_CAPACITY
@@ -16,7 +17,6 @@ const char * err_status = "-ERR";
 // Copies the first line of the file and deletes it.
 // This is so we don't have to deal with POP3 stuff in the mime parser (+OK, -ERR).
 int main() {
-  char first_line[MAX_LENGTH] = "";
   char buffer[MAX_LENGTH] = "";
   char *filter_medias, *filter_message, *pop3_filter_version, *pop3_server, *pop3_username, *client_number;
 
@@ -30,22 +30,20 @@ int main() {
 
   int number_read = 0;
   int buffer_index = 0;
-  int line_index = 0;
 
   while ((number_read = fread(buffer, CHARACTER_SIZE, READ_COUNT, retrieved_mail)) > 0) {
     while (buffer[buffer_index] != '\0') {
-      if (buffer[buffer_index] == '\r') {
-        if (buffer[buffer_index + 1] == '\n') {
-          first_line[buffer_index] = '\r';
-          first_line[buffer_index + 1] = '\n';
+      if (buffer[buffer_index] == '\r' && buffer[buffer_index + 1] == '\n') {
           goto end;
-        }
       }
+      buffer_index++;
     }
   }
 
 end:
-  fwrite(first_line, CHARACTER_SIZE, strlen(first_line), transformed_mail);
+  fwrite(buffer, CHARACTER_SIZE, buffer_index+2, transformed_mail);
 
+  fclose(transformed_mail);
+  mime_parser(filter_medias, filter_message, client_number, retrieved_mail);
   return 0;
 }

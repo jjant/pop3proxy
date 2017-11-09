@@ -451,20 +451,16 @@ int transition(char c, FILE * transformed_mail){
 
 char aux[BUFSIZE] = { 0 };
 
-int main() {
+int mime_parser(char * filter_medias, char * filter_message, char * client_number, FILE * retrieved_mail) {
 	char c;
 	int i = 0;
 	state = HEADER_NAME;
 	read_chars = COMMON;
-	char *filter_medias, *filter_message, *pop3_filter_version, *pop3_server, *pop3_username, *client_number;
 
-	get_env_vars(&filter_medias, &filter_message, &pop3_filter_version, &pop3_server, &pop3_username, &client_number);
-	print_env_vars(filter_medias, filter_message, pop3_filter_version, pop3_server, pop3_username, client_number);
-
-	char * retrieved_mail_file_path  = get_retrieved_mail_file_path(client_number[0]);
+	// char * retrieved_mail_file_path  = get_retrieved_mail_file_path(client_number[0]);
   char * transformed_mail_file_path = get_transformed_mail_file_path(client_number[0]);
 
-	FILE * retrieved_mail   = fopen(retrieved_mail_file_path, "r");
+	// FILE * retrieved_mail   = fopen(retrieved_mail_file_path, "r");
 	FILE * transformed_mail = fopen(transformed_mail_file_path, "a");
 
  	blackList[0] = NULL;
@@ -485,6 +481,8 @@ int main() {
  	int number_read;
  	int is_comment = 1;
 
+	// Eat first characters which correspond to pop3 +ok/-err stuff
+	// fread(aux, CHARACTER_SIZE, index_from_which_to_read_file, retrieved_mail);
 
 	#define READ_COUNT BUFSIZE - 1
 
