@@ -1,1 +1,7 @@
 .DS_Store
+
+src/pop3.out
+src/transformed_mail_0.txt
+src/transformed_mail_1.txt
+src/retrieved_mail_0.txt
+src/retrieved_mail_1.txt

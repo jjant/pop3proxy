@@ -45,6 +45,7 @@ end:
 
   fclose(retrieved_mail);
   fclose(transformed_mail);
+  printf("\n\nGOTHERE\n\n\n");
   mime_parser(filter_medias, filter_message, client_number, buffer_index + 2);
   return 0;
 }

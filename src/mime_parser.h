@@ -43,12 +43,12 @@ typedef enum {
   NEW_LINE
 } char_types;
 
-typedef struct cTypeQueue{
-	struct cTypeQueue* prev;
-	struct cTypeQueue* next;
+typedef struct cTypeStack{
+	struct cTypeStack* prev;
+	struct cTypeStack* next;
 	content_type type;
 	char* boundary;
-} cTypeQueue;
+} cTypeStack;
 
 typedef struct cTypeNSubType{
 	char* type;

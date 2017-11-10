@@ -10,7 +10,7 @@
 #define CHARACTER_SIZE 1
 
 #define BUFSIZE 1024
-#define BUFFLEN 1000
+#define BUFFLEN 10000
 
 typedef struct Buffer{
 	char buff[BUFFLEN];
@@ -25,7 +25,7 @@ char bound[BUFFLEN];
 char stdinBuf[BUFFLEN];
 states state;
 char_types read_chars;
-cTypeQueue* cType;
+cTypeStack* cType;
 cTypeNSubType* blacklist[100];
 cTypeNSubType actualContent;
 char* substitute_text;
@@ -35,13 +35,6 @@ int erasing = 0;
 #define LIMIT_BOUND(c) ((c) == '"' || (c) == 0 || (c) == '\r' || (c) == '\n')
 #define WHITESPACE(c) ((c) == ' ' || (c) == '	')
 #define CRLF_CHAR(c) ((c) == '\n' || (c) == '\r')
-
-void free_queue_node(cTypeQueue* node) {
-	if(node->boundary != NULL){
-		free(node->boundary);
-	}
-	free(node);
-}
 
 void free_blacklist() {
 	for(int k = 0; blacklist[k] != NULL; k++) {
@@ -160,7 +153,6 @@ void populate_blacklist(char* items) {
 */
 int is_in_blacklist(cTypeNSubType* content) {
 	for(int k = 0; blacklist[k] != NULL; k++) {
-   		//printf("\nType: %s, Sub: %s\n", blacklist[k]->type, blacklist[k]->subtype);
    		if(strcicmp(content->type, blacklist[k]->type) == 0){
    			if(blacklist[k]->subtype[0] == '*' || strcicmp(content->subtype, blacklist[k]->subtype) == 0){
    				return 0;
@@ -281,7 +273,7 @@ int transition(char c, FILE * transformed_mail){
 		   	}
 			break;
 		case CSUBTYPE_DATA:
-			if(c == ';' || read_chars == NEW_LINE || read_chars == CRLF){
+			if(c == ';' || read_chars == NEW_LINE || read_chars == CRLFCRLF){
 				if(actualContent.subtype != NULL) {
 					free(actualContent.subtype);
 				}
@@ -329,7 +321,7 @@ int transition(char c, FILE * transformed_mail){
 				if (read_chars == CRLFCRLF) {
 					read_chars = COMMON;
 			   		state = CONTENT_DATA;
-			   		write_str_to_out_bufff("\r\n", transformed_mail);
+			   		write_str_to_out_bufff("\r\n\r\n", transformed_mail);
 			   		compBuf.index = 0;
 	    			compBuf.buff[0] = 0;
 			   		return 0;
@@ -377,7 +369,7 @@ int transition(char c, FILE * transformed_mail){
 		case BOUNDARY:
 			if(c == ';' || read_chars == NEW_LINE || read_chars == CRLFCRLF){
 				//printf("%d\n", read_chars);
-				cType->boundary = malloc(100 * sizeof(char));
+ 			  cType->boundary = malloc((strlen(compBuf.buff) + 1) * sizeof(char));
 				strcpy(cType->boundary, compBuf.buff);
 				compBuf.index = 0;
     			compBuf.buff[0] = 0;
@@ -405,7 +397,7 @@ int transition(char c, FILE * transformed_mail){
 			}
 			break;
 		case CONTENT_DATA:
-			if(read_chars == CRLF) {
+			if(read_chars == CRLF || read_chars == CRLFCRLF) {
 				if(cType->type == COMPOSITE && check_boundary(compBuf.buff, cType->boundary) == SEPARATOR) {
 					if(erasing == ERASING){
 						write_str_to_out_bufff("--", transformed_mail);
@@ -431,11 +423,17 @@ int transition(char c, FILE * transformed_mail){
 							write_str_to_out_bufff(cType->prev->boundary, transformed_mail);
 							write_str_to_out_bufff("--\r\n", transformed_mail);
 						}
-						cTypeQueue* aux1 = cType->prev;
-						cTypeQueue* aux2 = cType;
+						free(cType->prev->boundary);
+						cType->prev->boundary = NULL;
+						cTypeStack* aux1 = cType;
+						cTypeStack* aux2 = cType->prev;
 						cType = cType->prev->prev;
-						free_queue_node(aux1);
-						free_queue_node(aux2);
+						free(aux1);
+						aux2->next = NULL;
+						if(cType == NULL) {
+							free(aux2);
+							state = TRANSPARENT;
+						}
 						erasing = NOT_ERASING;
 					}
 				}
@@ -476,7 +474,7 @@ int mime_parser(char * filter_medias, char * filter_message, char * client_numbe
 
 	actualContent.type = NULL;
 	actualContent.subtype = NULL;
- 	cType = malloc(sizeof(cTypeQueue));
+ 	cType = malloc(sizeof(cTypeStack));
  	cType->prev = cType->next = NULL;
  	cType->type = NO_CONTENT;
 	cType->boundary = NULL;
