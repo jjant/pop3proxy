@@ -24,7 +24,8 @@ int main(){
 	name 	= getenv("POP3_USERNAME");
 
 	printf("CLIENT_NUM: %s\n", client);
-	printf("FILTER_MEDIAS: %s\n", med);
+	if(med != NULL)
+		printf("FILTER_MEDIAS: %s\n", med);
 	printf("FILTER_MSG: %s\n", msg);
 	printf("POP3FILTER_VERSION: %s", ver);
 	printf("POP3_SERVER: %s\n", ser);

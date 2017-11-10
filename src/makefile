@@ -5,4 +5,4 @@ all:
 	gcc -o testT testT.c
 
 clean:
-	rm proxy confClient testT
+	rm proxy confClient testT proxy_log.txt

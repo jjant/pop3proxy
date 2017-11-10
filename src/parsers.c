@@ -83,19 +83,25 @@ int parseConfigCommand(char b[]){
         printf("---New origin server: %s---\n", settings.origin_server);
         return OK;
     }
-    else if ( strncmp( b, "EF ", 3) == 0 ){                                    //OK, but not used yet
+    else if ( strncmp( b, "EF ", 3) == 0 ){                                    //OK
         //Set error file
         settings.error_file = malloc (strlen(b+3));
         memcpy(settings.error_file, b+3, strlen(b+3)+1);
         printf("---New error file: %s---\n", settings.error_file);
         return OK;
     }
-    else if ( strncmp( b, "PA ", 3) == 0 ){                                    //WTF?
+    else if ( strncmp( b, "PA ", 3) == 0 ){                                    //OK
         //Set POP3 address
+        settings.pop3_address = malloc (strlen(b+3));
+        memcpy(settings.pop3_address, b+3, strlen(b+3)+1);
+        printf("---New pop3 address: %s---\n", settings.pop3_address);
         return OK;
     }
-    else if ( strncmp( b, "MA ", 3) == 0 ){                                    //WTF? 
+    else if ( strncmp( b, "MA ", 3) == 0 ){                                    //OK 
         //Set management address
+        settings.management_address = malloc (strlen(b+3));
+        memcpy(settings.management_address, b+3, strlen(b+3)+1);
+        printf("---New management address: %s---\n", settings.management_address);
         return OK;
     }
     else if ( strncmp( b, "RM ", 3) == 0 ){                                    //OK, but not used yet
@@ -176,7 +182,7 @@ int parseConfigCommand(char b[]){
         metrics.tb_on = 0;
         return OK;
     }
-    else if ( strncmp( b, "GTB", 3) == 0 ){                                     //TB not implemented
+    else if ( strncmp( b, "GTB", 3) == 0 ){                                     //TB from the servers only
         //Get transfered bytes metrics
         return GTB;
     }

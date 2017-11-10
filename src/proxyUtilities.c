@@ -23,6 +23,7 @@
 pthread_t               threadForConnection;
 extern struct Metrics   metrics;
 extern struct Settings  settings;
+extern FILE             *proxy_log;
 extern FILE             *retrieved_mail;
 extern FILE             *transformed_mail;
 extern int              **pipes_fd;
@@ -53,18 +54,90 @@ void setDefaultMetrics() {
 void setDefaultSettings() {
     settings.origin_server = "127.0.0.1";
     settings.error_file = "/dev/null";
-    //settings.pop3_address =;
-    //settings.management_address =;
+    settings.pop3_address = NULL;                                 //All addresses for default
+    settings.management_address = "127.0.0.1";
     settings.replacement_message = "Parte reemplazada...";
-    settings.censurable = "";
+    settings.censurable = NULL;
     settings.management_port = 9090;
     settings.pop3_port = 1110;
     settings.origin_port = 110;
-    settings.cmd = "";
+    settings.cmd = NULL;
     settings.version = "0.7.0\n";
 }
 
-void configureSocket(int* sock, int dom, int type, int prot, int level, int optname, int *optval, struct sockaddr_in *address, int *addr_len, int port) {
+void readArguments(int argc, char *argv[]) {
+    FILE    *fp;
+    int     option                  = 0;
+    int     message_multiple_lines  = 0;
+    int     error                   = 0;
+
+    //Especificamos las opciones. Aquellas que aparecen seguidas de el
+    //caracter ':' indican que requieren un argumento.
+
+    while ((option = getopt(argc, argv,"e:hl:L:m:M:o:p:P:t:v")) != -1) {
+        switch (option) {
+            case 'e' : 
+                settings.error_file = malloc(strlen(optarg));
+                strcpy(settings.error_file, optarg);
+                fp = freopen(settings.error_file, "a", stderr);
+                break;
+            case 'h' : 
+                printf("No help available, try commands one by one... \n");
+                exit(0);
+                break;
+            case 'l' :
+                settings.pop3_address = malloc(strlen(optarg));
+                strcpy(settings.pop3_address, optarg);
+                break;
+            case 'L' : 
+                settings.management_address = malloc(strlen(optarg));
+                strcpy(settings.management_address, optarg);
+                break;
+            case 'm' :
+                if (message_multiple_lines == 0) {
+                    message_multiple_lines = 1;
+                    settings.replacement_message = malloc(strlen(optarg));
+                    strcpy(settings.replacement_message, optarg);
+                }
+                else {
+                    settings.replacement_message = realloc(settings.replacement_message, strlen(settings.replacement_message) + strlen("\\n") + strlen(optarg));
+                    strcat(settings.replacement_message, "\n");
+                    strcat(settings.replacement_message, optarg);
+                }
+                break;
+            case 'M' :
+                settings.censurable = malloc(strlen(optarg));
+                strcpy(settings.censurable, optarg);
+                break;
+            case 'o' :
+                settings.management_port = atoi(optarg);
+                break;
+            case 'p' :
+                settings.pop3_port = atoi(optarg);
+                break;
+            case 'P' :
+                settings.origin_port = atoi(optarg);
+                break;
+            case 't' :
+                settings.cmd = malloc(strlen(optarg));
+                strcpy(settings.cmd, optarg);
+                break;
+            case 'v' :
+                printf("Proxy version: %s\n", settings.version);
+                exit(0);
+                break;
+            default: 
+                error = 1;
+                break;
+        }
+    }
+    //printf("aaa: %d\n", optind);
+
+    settings.origin_server = malloc(strlen(argv[optind]));
+    strcpy(settings.origin_server, argv[optind]);
+}
+
+void configureSocket(int* sock, int dom, int type, int prot, int level, int optname, int *optval, struct sockaddr_in *address, int *addr_len, int port, char *if_addr) {
 
     //create a master socket for clients and a configuration master socket
     if( (*sock = socket(dom , type , prot)) == 0) {
@@ -78,7 +151,7 @@ void configureSocket(int* sock, int dom, int type, int prot, int level, int optn
     }
 
     //type of socket for client and config
-    setSocketType( address, port );
+    setSocketType( address, port, if_addr );
     *addr_len = sizeof(*address);
 
    
@@ -95,10 +168,13 @@ void configureSocket(int* sock, int dom, int type, int prot, int level, int optn
     }
 }
 
-void setSocketType( struct sockaddr_in* client_address, int port ) {
+void setSocketType( struct sockaddr_in* client_address, int port, char *if_addr ) {
     //type of socket created for client
     client_address->sin_family      = AF_INET;
-    client_address->sin_addr.s_addr = INADDR_ANY;
+    if(if_addr == NULL)
+        client_address->sin_addr.s_addr = INADDR_ANY;
+    else
+        client_address->sin_addr.s_addr = inet_addr(if_addr); 
     client_address->sin_port        = htons( port );
 }
 
@@ -161,7 +237,7 @@ void handleConfConnection(int conf_master_socket, struct sockaddr_in *conf_addre
 
     if ((new_conf_socket = accept(conf_master_socket, (struct sockaddr *)conf_address, (socklen_t*)conf_addr_len))<0) {
         perror("---config--- accept failed");
-        exit(EXIT_FAILURE);
+        //exit(EXIT_FAILURE);
     }
 
     //send new connection greeting message
@@ -186,6 +262,7 @@ void handleConfConnection(int conf_master_socket, struct sockaddr_in *conf_addre
 
     printf("New configuration connection: Socket fd: %d , ip: %s , port: %d\n" , new_conf_socket , inet_ntoa(conf_address->sin_addr) , ntohs(conf_address->sin_port));
 
+    fwrite("Admin connected\n", 1, 16, proxy_log);
     return;
 }
 
@@ -228,7 +305,7 @@ void* handleThreadForConnection(void* args) {
 
     if ((new_client_socket = accept(tArgs->master_socket, (struct sockaddr *)tArgs->client_address, (socklen_t*)tArgs->client_addr_len))<0) {
         perror("accept failed");
-        exit(EXIT_FAILURE);
+        //exit(EXIT_FAILURE);
     }
 
     memset(&servAddr4, 0, sizeof(servAddr4)); // Zero out structure
@@ -242,13 +319,15 @@ void* handleThreadForConnection(void* args) {
         servAddr4.sin_port = htons(settings.origin_port);
         if ((new_server_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) <= 0) {
             perror("server socket failed");
-            exit(1);
+            close(new_client_socket);
+            //exit(EXIT_FAILURE);
             return NULL;
         }
         if (connect(new_server_socket, (struct sockaddr *) &servAddr4, sizeof(servAddr4)) < 0) {
             perror("connect failed");
+            close(new_client_socket);
             close(new_server_socket);
-            exit(1);
+            //exit(EXIT_FAILURE);
         } 
     }
     //IPv6
@@ -256,13 +335,15 @@ void* handleThreadForConnection(void* args) {
         servAddr6.sin6_port = htons(settings.origin_port);
         if ((new_server_socket = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP)) <= 0) {
             perror("server socket failed");
-            exit(1);
+            close(new_client_socket);
+            //exit(EXIT_FAILURE);
             return NULL;
         }
         if (connect(new_server_socket, (struct sockaddr *) &servAddr6, sizeof(servAddr6)) < 0) {
             perror("connect failed");
+            close(new_client_socket);
             close(new_server_socket);
-            exit(1);
+            //exit(EXIT_FAILURE);
         } 
     }
     //domain name
@@ -273,9 +354,11 @@ void* handleThreadForConnection(void* args) {
 
         //in case of receiving an IP, the creation of this thread is unnecessary. Check later.
         //change localhost and pop3 strings.
-        if ((rv = getaddrinfo("localhost", "pop3", &hints, &servinfo)) != 0) {
+        if ((rv = getaddrinfo(settings.origin_server, "pop3", &hints, &servinfo)) != 0) {
             perror("DNS resolution failed");
-            exit(EXIT_FAILURE);
+            close(new_client_socket);
+            pthread_kill( tArgs->tId, SIGUSR1);
+            pthread_exit(0);
         }
 
         // loop through all the results and connect to the first we can
@@ -287,6 +370,7 @@ void* handleThreadForConnection(void* args) {
 
             if (connect(new_server_socket, p->ai_addr, p->ai_addrlen) < 0) {
                 perror("connect failed");
+                close(new_client_socket);
                 close(new_server_socket);
                 continue;
             }
@@ -452,7 +536,7 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf
                 pid = fork();
                 if (pid ==  0) {
                     // This is the child process.
-                    //Sends errors to specific file instead of stderr
+                    //Sends errors to specific file instead of stderr. Don't know if it's needed when parent process already did this
                     freopen(settings.error_file, "a", stderr);
                     setEnvironmentVars(i, (*info_clients)[i].user_name);                    
                     handleChildProcess(i);
@@ -542,6 +626,7 @@ void handleManagementRequests(int k, int **conf_sockets_array, struct sockaddr_i
                 printf("---config--- CONNECTION %d, ADMIN CLOSES\n", k);
                 close( conf_ds );
                 (*conf_sockets_array)[k] = 0;
+                fwrite("Admin disconnected\n", 1, 19, proxy_log);
             }
             else if(handleResponse < 0) {
                 perror("---config--- read failed");
@@ -605,13 +690,13 @@ void handleManagementRequests(int k, int **conf_sockets_array, struct sockaddr_i
                             }
                             break;
                 case PP:    close(*master_socket);
-                            configureSocket(master_socket, AF_INET, SOCK_STREAM, IPPROTO_TCP, SOL_SOCKET, SO_REUSEADDR, opt_ms, client_address, client_addr_len, settings.pop3_port);
+                            configureSocket(master_socket, AF_INET, SOCK_STREAM, IPPROTO_TCP, SOL_SOCKET, SO_REUSEADDR, opt_ms, client_address, client_addr_len, settings.pop3_port, settings.pop3_address);
                             if ( write( conf_ds , ok_msg, strlen(ok_msg) ) != strlen(ok_msg) ) {
                                 perror("---config--- write failed"); 
                             }
                             break;
                 case MP:    close(*conf_master_socket);
-                            configureSocket(conf_master_socket, PF_INET, SOCK_STREAM, IPPROTO_SCTP, SOL_SOCKET, SO_REUSEADDR, opt_cms, conf_address, conf_addr_len, settings.management_port);
+                            configureSocket(conf_master_socket, PF_INET, SOCK_STREAM, IPPROTO_SCTP, SOL_SOCKET, SO_REUSEADDR, opt_cms, conf_address, conf_addr_len, settings.management_port, settings.management_address);
                             if ( write( conf_ds , ok_msg, strlen(ok_msg) ) != strlen(ok_msg) ) {
                                 perror("---config--- write failed"); 
                             }
@@ -681,6 +766,7 @@ void readFromClient(int i, struct DescriptorsArrays *descriptors_arrays, struct 
         descriptors_arrays->server_sockets_read[i] = 0;
         buffer_reset(buffer[i][0]);
         buffer_reset(buffer[i][1]);
+        fwrite("Client disconnected\n", 1, 20, proxy_log);
     }
     else if(handleResponse < 0) {
         perror("read failed");
@@ -874,13 +960,15 @@ void readFromServer(int i, struct DescriptorsArrays *descriptors_arrays, struct 
             close( descriptors_arrays->client_sockets_read[i] );
             descriptors_arrays->client_sockets_read[i] = 0;
             buffer_reset(buffer[i][1]);
-        }                  
+        }      
+        fwrite("Server disconnected\n", 1, 20, proxy_log);            
     }
     else if(handleResponse < 0) {
         perror("read failed");
     }
     else {
         printf("Read something from server\n");
+        metrics.transfered_bytes += (unsigned long int)handleResponse;
 
         if ( (*info_clients)[i].capa_invoked == 1 ) {
             if ( parseServerForCAPA(aux_buf) == 1 ){
@@ -979,7 +1067,8 @@ void setEnvironmentVars( int i, const char *name ) {
     intToString(i, b);
     printf("---> %s\n", b);
     setenv("CLIENT_NUM", b, 1);
-    setenv("FILTER_MEDIAS", settings.censurable, 1);
+    if(settings.censurable != NULL)
+        setenv("FILTER_MEDIAS", settings.censurable, 1);
     setenv("FILTER_MSG", settings.replacement_message, 1);
     setenv("POP3FILTER_VERSION", settings.version, 1);
     setenv("POP3_SERVER", settings.origin_server, 1); 

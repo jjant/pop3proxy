@@ -17,6 +17,7 @@
 
 struct Metrics  metrics;
 struct Settings settings;
+FILE            *proxy_log;
 FILE            *retrieved_mail;
 FILE            *transformed_mail;
 int             **pipes_fd;
@@ -27,6 +28,7 @@ int             **pipes_fd;
  */
 static void wake_handler(const int signal) {
     printf("SIGNAL RECEIVED. Connection succeeded.\n\n");
+    fwrite("Client connected\n", 1, 17, proxy_log);
     return;
 }
 
@@ -35,6 +37,8 @@ static void wake_handler(const int signal) {
  */
 static void finalize_pgm(const int signal) {
     printf("\nEXITING PROGRAM.\n\n");
+    fwrite("Proxy exiting.\n", 1, 15, proxy_log);
+    fclose(proxy_log);
     exit(0);
 }
 
@@ -85,11 +89,16 @@ int main(int argc, char *argv[])
     setDefaultMetrics();
     setDefaultSettings();
 
-    configureSocket(&master_socket, AF_INET, SOCK_STREAM, IPPROTO_TCP, SOL_SOCKET, SO_REUSEADDR, &opt_ms, &client_address, &client_addr_len, settings.pop3_port);
-    configureSocket(&conf_master_socket, PF_INET, SOCK_STREAM, IPPROTO_SCTP, SOL_SOCKET, SO_REUSEADDR, &opt_cms, &conf_address, &conf_addr_len, settings.management_port);
+    readArguments(argc, argv);
+
+    configureSocket(&master_socket, AF_INET, SOCK_STREAM, IPPROTO_TCP, SOL_SOCKET, SO_REUSEADDR, &opt_ms, &client_address, &client_addr_len, settings.pop3_port, settings.pop3_address);
+    configureSocket(&conf_master_socket, PF_INET, SOCK_STREAM, IPPROTO_SCTP, SOL_SOCKET, SO_REUSEADDR, &opt_cms, &conf_address, &conf_addr_len, settings.management_port, settings.management_address);
     
     printf("Listening on port %d for POP3 clients...\n", settings.pop3_port);
     printf("Listening on port %d for configuration...\n\n", settings.management_port);
+
+    proxy_log = fopen("./proxy_log.txt", "a");
+    fwrite("Server started...\n", 1, 18, proxy_log);
     
     while(1){
         //clear the socket sets

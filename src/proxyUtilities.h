@@ -1,9 +1,6 @@
 #ifndef PROXY_UTILITIES_H
 #define PROXY_UTILITIES_H
 
-#define PORT 8888
-#define CONFPORT 7777
-#define PORTSERVER 110
 #define BUFSIZE 128
 #define MAXCLIENTS 128
 
@@ -51,8 +48,8 @@ struct Metrics{
 struct Settings{
 	char *origin_server;		//Def: "127.0.0.1"
 	char *error_file;			//Def: "/dev/null"
-	char *pop3_address;			//Def: todas las interfaces
-	char *management_address;	//Def: "loopback"
+	char *pop3_address;			//Def: INADDR_ANY
+	char *management_address;	//Def: "127.0.0.1"
 	char *replacement_message;	//Def: "Parte reemplazada..."
 	char *censurable;			//Def: ""
 	int  management_port;		//Def: 9090
@@ -68,12 +65,14 @@ void setDefaultMetrics();
 
 void setDefaultSettings();
 
-void configureSocket(int*, int, int, int, int, int, int*, struct sockaddr_in*, int*, int);
+void readArguments(int argc, char *argv[]);
+
+void configureSocket(int*, int, int, int, int, int, int*, struct sockaddr_in*, int*, int, char*);
 
 /**
  * Configures the type of socket for clients
  */
-void setSocketType(struct sockaddr_in*, int);
+void setSocketType(struct sockaddr_in*, int, char*);
 
 /**
  * Adds descriptors currently connected to read and writes sets (config sockets too). 
