@@ -3,28 +3,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdbool.h>
 #include "parser_utils.h"
 #include "mime_parser.h"
 
 #define CHARACTER_SIZE 1
-
-typedef enum {HEADER_NAME=0, HEADER_DATA, CTYPE_DATA, CSUBTYPE_DATA, ATTR_NAME, ATTR_DATA, BOUNDARY, CONTENT_DATA, TRANSPARENT} states;
-typedef enum {NO_CONTENT, COMPOSITE, DISCRETE} content_type;
-typedef enum {SEPARATOR, FINISH, NOT_BOUNDARY} boundary_type;
-typedef enum {NOT_ERASING, ERASING} errase_action;
-typedef enum {CR, CRLF, CRLFCR, CRLFCRLF, FOLD, COMMON, NEW_LINE} char_types;
-
-typedef struct cTypeQueue{
-	struct cTypeQueue* prev;
-	struct cTypeQueue* next;
-	content_type type;
-	char* boundary;
-} cTypeQueue;
-
-typedef struct cTypeNSubType{
-	char* type;
-	char* subtype;
-} cTypeNSubType;
 
 #define BUFSIZE 1024
 #define BUFFLEN 1000
@@ -43,7 +26,7 @@ char stdinBuf[BUFFLEN];
 states state;
 char_types read_chars;
 cTypeQueue* cType;
-cTypeNSubType* blackList[100];
+cTypeNSubType* blacklist[100];
 cTypeNSubType actualContent;
 char* substitute_text;
 int erasing = 0;
@@ -61,10 +44,10 @@ void free_queue_node(cTypeQueue* node) {
 }
 
 void free_blacklist() {
-	for(int k = 0; blackList[k] != NULL; k++) {
-		free(blackList[k]->type);
-		free(blackList[k]->subtype);
-   		free(blackList[k]);
+	for(int k = 0; blacklist[k] != NULL; k++) {
+		free(blacklist[k]->type);
+		free(blacklist[k]->subtype);
+   		free(blacklist[k]);
    	}
 }
 
@@ -103,6 +86,7 @@ char* copy_to_buffer(char* str) {
 	}
 	return str;
 }
+
 /*
 	Verifica si un string es un boundary.
 	De serlo, identifica si es un boundary separador o uno final.
@@ -127,38 +111,58 @@ boundary_type check_boundary(char* str, char* bound) {
 	return NOT_BOUNDARY;
 }
 
+static char * allocate_for_string(char * str) {
+	return (char*)malloc((strlen(str) + 1) * sizeof(char));
+}
+
+static cTypeNSubType * create_blacklist_element(char * type, bool isSubtype) {
+	cTypeNSubType * const blacklist_element = malloc(sizeof(cTypeNSubType));
+
+	if (isSubtype) {
+		blacklist_element->subtype = allocate_for_string(type);
+		strcpy(blacklist_element->subtype, type);
+	} else {
+		blacklist_element->type = allocate_for_string(type);
+		strcpy(blacklist_element->type, type);
+	}
+
+	return blacklist_element;
+}
+
+
 /*
 	Crea una lista con todos los Content Types que debe censurar.
 */
 void populate_blacklist(char* items) {
 	int i = 0;
-	while(items[0] != 0) {
+
+	while(items[0] != '\0') {
 		items = copy_to_buffer(items);
+
 		if(items[0] == '/') {
-			blackList[i] = malloc(sizeof(cTypeNSubType));
-			blackList[i]->type = (char*)malloc((strlen(buff) + 1) * sizeof(char));
-			strcpy(blackList[i]->type, buff);
+			blacklist[i] = create_blacklist_element(buff, false);
 			items++;
 		} else {
-			blackList[i]->subtype = (char*)malloc((strlen(buff) + 1) * sizeof(char));
-			strcpy(blackList[i]->subtype, buff);
+			blacklist[i]->subtype = (char*)malloc((strlen(buff) + 1) * sizeof(char));
+			strcpy(blacklist[i]->subtype, buff);
 			if(items[0] == ',') {
 				items++;
 			}
 			i++;
 		}
 	}
-	blackList[i] = NULL;
+
+	blacklist[i] = NULL;
 }
 
 /*
 	Verifica si un contenido dado debe ser censurado o no.
 */
-int isInBlacklist(cTypeNSubType* content) {
-	for(int k = 0; blackList[k] != NULL; k++) {
-   		//printf("\nType: %s, Sub: %s\n", blackList[k]->type, blackList[k]->subtype);
-   		if(strcicmp(content->type, blackList[k]->type) == 0){
-   			if(blackList[k]->subtype[0] == '*' || strcicmp(content->subtype, blackList[k]->subtype) == 0){
+int is_in_blacklist(cTypeNSubType* content) {
+	for(int k = 0; blacklist[k] != NULL; k++) {
+   		//printf("\nType: %s, Sub: %s\n", blacklist[k]->type, blacklist[k]->subtype);
+   		if(strcicmp(content->type, blacklist[k]->type) == 0){
+   			if(blacklist[k]->subtype[0] == '*' || strcicmp(content->subtype, blacklist[k]->subtype) == 0){
    				return 0;
    			}
    		}
@@ -215,8 +219,6 @@ char_types get_current_state_char(char c){
 void error() {
 	state = TRANSPARENT;
 }
-
-
 
 int transition(char c, FILE * transformed_mail){
 	switch(state) {
@@ -285,7 +287,7 @@ int transition(char c, FILE * transformed_mail){
 				}
 				actualContent.subtype = (char*)malloc((strlen(compBuf.buff) + 1) * sizeof(char));
 				strcpy(actualContent.subtype, compBuf.buff);
-				if(isInBlacklist(&actualContent) == 0) {
+				if(is_in_blacklist(&actualContent) == 0) {
 					write_str_to_out_bufff(" text/plain\r\n\r\n", transformed_mail);
 					write_str_to_out_bufff(substitute_text, transformed_mail);
 					write_str_to_out_bufff("\r\n", transformed_mail);
@@ -464,7 +466,7 @@ int mime_parser(char * filter_medias, char * filter_message, char * client_numbe
 	FILE * retrieved_mail   = fopen(retrieved_mail_file_path, "r");
 	FILE * transformed_mail = fopen(transformed_mail_file_path, "a");
 
- 	blackList[0] = NULL;
+ 	blacklist[0] = NULL;
  	// populate_blacklist("text/html,application/*");
 	// substitute_text = "Content was deleted";
 

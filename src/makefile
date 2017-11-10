@@ -9,7 +9,7 @@ parser_run:
 	./parser.out
 
 pop3_run:
-	rm "./transformed_mail_${CLIENT_NUM}.txt"
+	# rm "./transformed_mail_${CLIENT_NUM}.txt"
 	gcc pop3_parser.c parser_utils.c mime_parser.c -o pop3.out
 	./pop3.out
 
