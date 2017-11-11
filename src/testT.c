@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 #define BUFSIZE 1024
 
@@ -37,7 +38,7 @@ char aux[BUFSIZE] = { 0 };
 
 int main(){
 	char *med, *msg, *ver, *ser, *name, *client;
-	int number_read;
+	int number_read, num_size;
 
 	get_env_vars(&med, &msg, &ver, &ser, &name, &client);
 	printf("\n\nTEST PROGRAM OK\n\n");
@@ -45,17 +46,26 @@ int main(){
 
 ///////////////////////////////////////////////////////
 
-	#define RETRIEVED_MAIL_CLIENT_INDEX 17
-	#define TRANSFORMED_MAIL_CLIENT_INDEX 19
-	char retrieved_mail_file_path[]   = "./retrieved_mail_n.txt";
-  char transformed_mail_file_path[] = "./transformed_mail_n.txt";
+	#define MAIL_CLIENT_INDEX 15
+	char file_path_retr[]   = "./retr_mail_nnnn";
+    char file_path_resp[] = "./resp_mail_nnnn";
 
-	// Replaces "n" for client id
-  retrieved_mail_file_path[RETRIEVED_MAIL_CLIENT_INDEX]      = client[0];
-  transformed_mail_file_path[TRANSFORMED_MAIL_CLIENT_INDEX]  = client[0];
+	// Replaces "nnnn" for client id
+    num_size = strlen(client);
+    for( int q = MAIL_CLIENT_INDEX; q > 11; q--){
+        if(num_size > 0) {
+            file_path_retr[q] = client[num_size-1];
+            file_path_resp[q] = client[num_size-1];
+            num_size--;
+        }
+        else {
+            file_path_retr[q] = 48;
+            file_path_resp[q] = 48;
+        }
+    }
 
-	FILE *retrieved_mail   = fopen(retrieved_mail_file_path, "r");
-	FILE *transformed_mail = fopen(transformed_mail_file_path, "a");
+	FILE *retrieved_mail   = fopen(file_path_retr, "r");
+	FILE *transformed_mail = fopen(file_path_resp, "a");
 
 	#define CHARACTER_SIZE 1
 	#define READ_COUNT BUFSIZE - 1

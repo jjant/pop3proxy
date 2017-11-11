@@ -131,10 +131,11 @@ void readArguments(int argc, char *argv[]) {
                 break;
         }
     }
-    //printf("aaa: %d\n", optind);
 
-    settings.origin_server = malloc(strlen(argv[optind]));
-    strcpy(settings.origin_server, argv[optind]);
+    if(argc > 1) {
+        settings.origin_server = malloc(strlen(argv[argc-1]));
+        strcpy(settings.origin_server, argv[argc-1]);
+    }
 }
 
 void configureSocket(int* sock, int dom, int type, int prot, int level, int optname, int *optval, struct sockaddr_in *address, int *addr_len, int port, char *if_addr) {
@@ -237,6 +238,7 @@ void handleConfConnection(int conf_master_socket, struct sockaddr_in *conf_addre
 
     if ((new_conf_socket = accept(conf_master_socket, (struct sockaddr *)conf_address, (socklen_t*)conf_addr_len))<0) {
         perror("---config--- accept failed");
+        return;
         //exit(EXIT_FAILURE);
     }
 
@@ -305,6 +307,8 @@ void* handleThreadForConnection(void* args) {
 
     if ((new_client_socket = accept(tArgs->master_socket, (struct sockaddr *)tArgs->client_address, (socklen_t*)tArgs->client_addr_len))<0) {
         perror("accept failed");
+        pthread_kill( tArgs->tId, SIGUSR1);
+        pthread_exit(0);
         //exit(EXIT_FAILURE);
     }
 
@@ -320,6 +324,8 @@ void* handleThreadForConnection(void* args) {
         if ((new_server_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) <= 0) {
             perror("server socket failed");
             close(new_client_socket);
+            pthread_kill( tArgs->tId, SIGUSR1);
+            pthread_exit(0);
             //exit(EXIT_FAILURE);
             return NULL;
         }
@@ -327,6 +333,8 @@ void* handleThreadForConnection(void* args) {
             perror("connect failed");
             close(new_client_socket);
             close(new_server_socket);
+            pthread_kill( tArgs->tId, SIGUSR1);
+            pthread_exit(0);
             //exit(EXIT_FAILURE);
         } 
     }
@@ -336,6 +344,8 @@ void* handleThreadForConnection(void* args) {
         if ((new_server_socket = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP)) <= 0) {
             perror("server socket failed");
             close(new_client_socket);
+            pthread_kill( tArgs->tId, SIGUSR1);
+            pthread_exit(0);
             //exit(EXIT_FAILURE);
             return NULL;
         }
@@ -343,6 +353,8 @@ void* handleThreadForConnection(void* args) {
             perror("connect failed");
             close(new_client_socket);
             close(new_server_socket);
+            pthread_kill( tArgs->tId, SIGUSR1);
+            pthread_exit(0);
             //exit(EXIT_FAILURE);
         } 
     }
@@ -370,8 +382,6 @@ void* handleThreadForConnection(void* args) {
 
             if (connect(new_server_socket, p->ai_addr, p->ai_addrlen) < 0) {
                 perror("connect failed");
-                close(new_client_socket);
-                close(new_server_socket);
                 continue;
             }
             // if we get here, we must have connected successfully
@@ -569,7 +579,7 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf
                
         }
         //If server stopped returning an answer (this is usefull for mails), close pipe
-        //Look for a better way (any other way) to do this
+        //Look for a better way to do this
         int count;
         ioctl(descriptors_arrays->server_sockets_read[i], FIONREAD, &count);
         if ( (count <= 0 && descriptors_arrays->server_commands_to_process[i] == 1) ){
@@ -708,16 +718,16 @@ void handleManagementRequests(int k, int **conf_sockets_array, struct sockaddr_i
 }
 
 void writeToClient(int i, struct DescriptorsArrays *descriptors_arrays, struct buffer ****b){
-    char            aux_buf[BUFSIZE];
+    char            aux_buf[BUFSIZE+1];
     struct buffer   ***buffer         = *b;
 
     printf("CONNECTION %d, ENTER WRITE TO CLIENT\n", i);
-    for( int j = 0 ; j < BUFSIZE ; j++ ) {
+    for( int j = 0 ; j <= BUFSIZE ; j++ ) {
         aux_buf[j] = '\0';
     }
     size_t  rbytes  = 0;
     uint8_t *ptr    = buffer_read_ptr(buffer[i][1], &rbytes);
-    memcpy(aux_buf,ptr,rbytes);
+    memcpy(aux_buf,ptr,strlen(ptr));
 
     //in case of reading an entire command, add space for '\0'
     if( (buffer[i][1]->read + rbytes) < buffer[i][1]->limit ){
@@ -862,7 +872,8 @@ void writeToServer(int i, struct DescriptorsArrays *descriptors_arrays, struct b
 void handleChildProcess(int i) {
     char    child_aux_buf_in[BUFSIZE];
     char    child_aux_buf_out[BUFSIZE];
-    int     pread, nread;
+    char    conn_number[11];
+    int     pread, nread, num_size;
 
     for( int p = 0 ; p < BUFSIZE ; p++ ) {
         child_aux_buf_in[p]     = '\0';
@@ -875,19 +886,32 @@ void handleChildProcess(int i) {
     close(pipes_fd[i][2]);
 
     //Transformation needs to be applied
-    //Replace 'n' with number of client ('i') in file path --> this is for test only, change
-    char file_path_retr[]   = "./retrieved_mail_n.txt";
-    char file_path_transf[] = "./transformed_mail_n.txt";
-    file_path_retr[17]      = i + 48;
-    file_path_transf[19]    = i + 48;
+    //Replace 'nnnn' with number of client ('i') in file path
+    char file_path_retr[]   = "./retr_mail_nnnn";
+    char file_path_resp[]   = "./resp_mail_nnnn";
+
+    intToString(i, conn_number);
+    num_size = strlen(conn_number);
+    for( int q = 15; q > 11; q--){
+        if(num_size > 0) {
+            file_path_retr[q] = conn_number[num_size-1];
+            file_path_resp[q] = conn_number[num_size-1];
+            num_size--;
+        }
+        else {
+            file_path_retr[q] = 48;
+            file_path_resp[q] = 48;
+        }
+    }
+
     retrieved_mail          = fopen(file_path_retr, "a");
-    //transformed_mail        = fopen(file_path_transf, "a");
+    //transformed_mail        = fopen(file_path_resp, "a");
        
     printf("\nRETR invoked and child process created\n\n");
 
     while ( (pread = read(pipes_fd[i][0], child_aux_buf_in, BUFSIZE)) > 0 ) {
-        printf("pread: %d\n\n", pread);
-        
+        if(child_aux_buf_in[pread-1] == '\0')
+            pread--;
         fwrite(child_aux_buf_in, 1, pread, retrieved_mail);
                         
         //Testing, extern program should do something.
@@ -901,10 +925,27 @@ void handleChildProcess(int i) {
     //fclose(transformed_mail);
 
     //This is where we should call the transformation program and that program should change the files.
-    system("./testT");
+    if(settings.censurable != NULL)
+        system("./testT");
+    else if(settings.cmd != NULL) {
+        char sys_command[strlen(settings.cmd)+36];    
+        strcpy(sys_command, settings.cmd);
+        strcat(sys_command, file_path_retr);
+        strcat(sys_command, " > ");
+        strcat(sys_command, file_path_resp);    
+        system(sys_command);
+    }
+    else {
+        char sys_command[37];
+        strcpy(sys_command, "cp ");
+        strcat(sys_command, file_path_retr);
+        strcat(sys_command, " ");
+        strcat(sys_command, file_path_resp);    
+        system(sys_command);
+    }
 
     //Send transformed mail to other pipe and then to client's buffer
-    transformed_mail = fopen(file_path_transf, "r");
+    transformed_mail = fopen(file_path_resp, "r");
     while ((nread = fread(child_aux_buf_out, 1, BUFSIZE-1, transformed_mail)) > 0){
         if ( write( pipes_fd[i][3] , child_aux_buf_out, strlen(child_aux_buf_out)) != strlen(child_aux_buf_out) ) {
             perror("write failed");       
@@ -920,7 +961,7 @@ void handleChildProcess(int i) {
     fclose(transformed_mail);
     //delete temporary files
     remove(file_path_retr);
-    remove(file_path_transf);
+    remove(file_path_resp);
 
     //close child read endpoint in first pipe
     close(pipes_fd[i][0]);
@@ -1065,7 +1106,6 @@ void readFromPipe(int i, struct DescriptorsArrays *descriptors_arrays, struct bu
 void setEnvironmentVars( int i, const char *name ) {
     char b[11];
     intToString(i, b);
-    printf("---> %s\n", b);
     setenv("CLIENT_NUM", b, 1);
     if(settings.censurable != NULL)
         setenv("FILTER_MEDIAS", settings.censurable, 1);

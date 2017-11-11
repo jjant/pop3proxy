@@ -1,7 +1,0 @@
-+OK 2 messages (320 octets)
-+OK 2 messages (320 octets)
-From: John Doe <example@example.com>
-MIME-Version: 1.0
-Content-Type: text/plain
-
-Puto

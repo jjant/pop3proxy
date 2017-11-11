@@ -27,7 +27,7 @@ int             **pipes_fd;
  * It's needed to unlock select().
  */
 static void wake_handler(const int signal) {
-    printf("SIGNAL RECEIVED. Connection succeeded.\n\n");
+    printf("SIGNAL RECEIVED.\n\n");
     fwrite("Client connected\n", 1, 17, proxy_log);
     return;
 }
@@ -98,7 +98,7 @@ int main(int argc, char *argv[])
     printf("Listening on port %d for configuration...\n\n", settings.management_port);
 
     proxy_log = fopen("./proxy_log.txt", "a");
-    fwrite("Server started...\n", 1, 18, proxy_log);
+    fwrite("Proxy started...\n", 1, 18, proxy_log);
     
     while(1){
         //clear the socket sets
