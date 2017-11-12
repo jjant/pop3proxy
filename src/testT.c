@@ -48,7 +48,7 @@ int main(){
 
 	#define MAIL_CLIENT_INDEX 15
 	char file_path_retr[]   = "./retr_mail_nnnn";
-    char file_path_resp[] = "./resp_mail_nnnn";
+    char file_path_resp[] 	= "./resp_mail_nnnn";
 
 	// Replaces "nnnn" for client id
     num_size = strlen(client);

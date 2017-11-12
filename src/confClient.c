@@ -7,144 +7,194 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <getopt.h>
 
 #define BUFSIZE 128
 
-int readString(char buffer[BUFSIZE]);
+//File where metrics are stored
+FILE *fp;
+int  sock;
 
-//void analyseString(char buffer[BUFSIZE]);
+void createMessageToSend(char*, char*);
+void sendAndReceive(char*, int);
 
-//This is merely a prototype function, to test connectivity with server
 int main(int argc, char *argv[]) {
-  	struct sockaddr_in 	 server_address;
-  	int 				         exit_command			= 0;
-  	int 				         sock;
-  	char 				         initial_buffer[BUFSIZE];
-	//Check for correct amount of args. For now, values are hard coded.
-	/*if (argc != 3) { // Test for correct number of arguments
-    	perror("Parameter(s) must be <Server Address> <Server Port>\n");
+    struct sockaddr_in 	 proxy_address;
+    char                 initial_buffer[BUFSIZE];
+    char                 *message                   = NULL;
+    //Aux variables
+    int                  option                     = 0;
+    int                  message_multiple_lines     = 0;
+    int                  error                      = 0;
+    char                 *proxy_IP                  = argv[1];          // First arg: server IP address (dotted quad)
+    int                  proxy_port                 = atoi(argv[2]);    // Second arg: server port
+
+	//Check for correct amount of args.
+	if (argc < 3) { // Test for correct number of arguments
+    	printf("Parameters must be <Server Address> <Server Port> and <options...>\n");
         exit(EXIT_FAILURE);
 	}
-  	char *servIP = argv[1];     // First arg: server IP address (dotted quad)
-  	char *echoString = argv[2]; // Second arg: server port
-	*/
-  	char *server_IP = "127.0.0.1";
-  	int  server_port 	 = 7777;
 
-  	for(int k = 0; k < BUFSIZE ; k++){
-  		initial_buffer[k] = '\0';
-  	}
-
-  	// Create a reliable, stream socket
+    // Create socket
   	sock = socket(PF_INET, SOCK_STREAM, IPPROTO_SCTP);
   	if (sock < 0){
-    	perror("socket failed");
+    	perror("Socket failed");
     	exit(EXIT_FAILURE);
   	}
 
-  	// Construct the server address structure
+  	// Construct the proxy address structure
   	// Zero out structure
-  	memset(&server_address, 0, sizeof(server_address)); 
+  	memset(&proxy_address, 0, sizeof(proxy_address)); 
   	// IPv4 address family
-  	server_address.sin_family = AF_INET;          
+  	proxy_address.sin_family = AF_INET;          
   	// Convert address
-  	if (inet_pton(AF_INET, server_IP, &server_address.sin_addr.s_addr) <= 0) {
+  	if (inet_pton(AF_INET, proxy_IP, &proxy_address.sin_addr.s_addr) <= 0) {
     	perror("inet_pton failed");
     	exit(EXIT_FAILURE);
   	}
-  	// Server port
-  	server_address.sin_port = htons(server_port);    
+  	// Proxy port
+  	proxy_address.sin_port = htons(proxy_port);    
 
-  	// Establish the connection to the server
-  	if (connect(sock, (struct sockaddr *) &server_address, sizeof(server_address)) < 0) {
+  	// Establish the connection to the proxy
+  	if (connect(sock, (struct sockaddr *) &proxy_address, sizeof(proxy_address)) < 0) {
     	perror("connect failed");
     	exit(EXIT_FAILURE);
   	}
 
-    if ( recv(sock, initial_buffer, BUFSIZE - 1, 0) <= 0) {
+    if ( recv(sock, initial_buffer, BUFSIZE, 0) <= 0) {
     	perror("recv failed");
     	exit(EXIT_FAILURE);
     }
-    printf("%s\n", initial_buffer );
-    
-    //Obviously, it's a basic test..
-    printf("EVERY COMMAND THAT STARTS WITH 'C + <space>' IS GOING TO BE ECHOED\n");
-    printf("TO QUIT, INTRODUCE SOMETHING STARTING WITH 'Q'\n\n");
-    
-    //This is going to be changed, for now it only needs to connect, send and receive data with server
-	while( !exit_command ) {
-		char first_char, second_char;
-		char buffer[BUFSIZE];
-		for( int i = 0; i < BUFSIZE; i++ ){
-			buffer[i] = '\0';
-		}
+    printf("%s\n", initial_buffer );    
 
-		printf("\nWaiting for command...\n");
-		printf(">");
-		first_char = getchar();
-		switch ( toupper(first_char) ){
-			case 'C':	if ( (second_char = getchar()) != ' ' ){
-							printf("Comando inválido\n");
-							while ( getchar() != '\n' );
-							break;
-						}
-						int resp = readString(buffer);
-						if (resp > 0) {
-							ssize_t num_bytes = send(sock, buffer, sizeof(buffer), 0);
-  							if (num_bytes < 0) {
-  								perror("send failed");
-  								exit(EXIT_FAILURE);
-  							}
-  							else if (num_bytes != sizeof(buffer)) {
-    							perror("sent unexpected number of bytes");
-    							exit(EXIT_FAILURE);
-  							}
+    fp = fopen("metrics.txt", "w");
 
-  							// Count of total bytes received
-  							unsigned int totalBytesRcvd = 0; 
-  							while (totalBytesRcvd < strlen(buffer)) {
-    							char resp_buffer[BUFSIZE]; 
-    							// Receive up to the buffer size (minus 1 to leave space for a null terminator)
-    							num_bytes = recv(sock, resp_buffer, BUFSIZE - 1, 0);
-    							if (num_bytes <= 0) {
-      								perror("recv failed");
-      								exit(EXIT_FAILURE);
-    							}
-    							totalBytesRcvd += num_bytes;
-    							resp_buffer[num_bytes] = '\0';    
-    							fputs(resp_buffer, stdout);
-  							}
-						}
-						else {
-							printf("Comando inválido (debe ser de menos de %d caracteres)\n", BUFSIZE-1);
-							while ( getchar() != '\n' );
-						}
-						break;
-			case 'Q':	printf("Quiting\n");
-						close(sock);
-						exit_command = 1;
-						break;
-			default	:	printf("Comando inválido\n");
-						while ( getchar() != '\n' );
-						break;
-		}
+    while ((option = getopt(argc, argv,"e:hl:L:m:M:o:p:P:t:v123456789")) != -1) {
+        switch (option) {
+            case 'e' :
+                createMessageToSend("EF ", optarg); 
+                break;
+            case 'h' : 
+                printf("HELP:\n");
+                printf("configClient proxy_address proxy_port [options]\n");
+                printf("OPTIONS:\n");
+                printf("        -h\n");
+                printf("        -v\n");
+                printf("        -e archivo-de-error\n");
+                printf("        -l dirección-pop3\n");
+                printf("        -L dirección-de-management\n");
+                printf("        -m mensaje-de-reemplazo\n");
+                printf("        -M media-types-censurables\n");
+                printf("        -o puerto-de-management\n");
+                printf("        -p puerto-local\n");
+                printf("        -P puerto-origen\n");
+                printf("        -t cmd\n");
+                printf("        -1 get-concurrent-connections\n");
+                printf("        -2 get-historical-accesses\n");
+                printf("        -3 get-transfered-bytes\n");
+                printf("        -4 turn-on-concurrent-connections\n");
+                printf("        -5 turn-on-historical-accesses\n");
+                printf("        -6 turn-on-transfered-bytes\n");
+                printf("        -7 turn-off-concurrent-connections\n");
+                printf("        -8 turn-off-historical-accesses\n");
+                printf("        -9 turn-off-transfered-bytes\n");
+                printf("\n");
+                exit(0);
+                break;
+            case 'l' :
+                createMessageToSend("PA ", optarg);
+                break;
+            case 'L' : 
+                createMessageToSend("MA ", optarg);
+                break;
+            case 'm' :
+                if (message_multiple_lines == 0) {
+                    message_multiple_lines = 1;
+                    message = malloc(strlen(optarg));
+                    strcpy(message, optarg);
+                }
+                else {
+                    message = realloc(message, 
+                        strlen(message) + strlen("\\n") + strlen(optarg));
+                    strcat(message, "\n");
+                    strcat(message, optarg);
+                }
+                break;
+            case 'M' :
+                createMessageToSend("CT ", optarg);
+                break;
+            case 'o' :
+                createMessageToSend("MP ", optarg);
+                break;
+            case 'p' :
+                createMessageToSend("PP ", optarg);
+                break;
+            case 'P' :
+                createMessageToSend("OP ", optarg);
+                break;
+            case 't' :
+                createMessageToSend("CD ", optarg);
+                break;
+            case 'v' :
+                sendAndReceive("VN", 1);
+                break;
+            case '1' :
+                sendAndReceive("GCC", 1);
+                break;
+            case '2' :
+                sendAndReceive("GHA", 1);
+                break;
+            case '3' :
+                sendAndReceive("GTB", 1);
+                break;
+            case '4' :
+                sendAndReceive("SCC", 0);
+                break;
+            case '5' :
+                sendAndReceive("SHA", 0);
+                break;
+            case '6' :
+                sendAndReceive("STB", 0);
+                break;
+            case '7' :
+                sendAndReceive("RCC", 0);
+                break;
+            case '8' :
+                sendAndReceive("RHA", 0);
+                break;
+            case '9' :
+                sendAndReceive("RTB", 0);
+                break;
+            default: 
+                error = 1;
+                break;
+        }
+    }
+    if (message != NULL){
+        createMessageToSend("CT ", message); 
+    }
 
-	}
+    fclose(fp);
 	return 0;
 }
 
-int readString(char buffer[BUFSIZE]) {
-	char c;
-	int  i;
+void createMessageToSend(char *pref, char *msg) {
+    char buf[strlen(msg)+3];
+    strcpy(buf, pref);
+    strcpy(buf+3, msg);
+    sendAndReceive(buf, 0);
+}
 
-	for( i = 0; i < BUFSIZE-1 && (c = getchar()) != '\n'; i++ ){
-		buffer[i] = c;	
-	}
-	if( i != BUFSIZE-1 ){
-		buffer[i] = '\n';
-		return 1;
-	}
-	else {
-		return 0;
-	}
+void sendAndReceive(char *msg, int saveMetric) {
+    char resp_buffer[BUFSIZE]; 
+    for (int i = 0; i < BUFSIZE; i++)
+        resp_buffer[i] = '\0';
+
+    if (send(sock, msg, strlen(msg), 0) < 0)
+        perror("send failed");
+    if (recv(sock, resp_buffer, BUFSIZE, 0) <= 0) 
+        perror("recv failed");
+    fputs(resp_buffer, stdout);
+    if (saveMetric == 1)
+        fwrite(resp_buffer, 1, strlen(resp_buffer), fp);
 }

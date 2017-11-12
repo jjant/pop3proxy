@@ -217,7 +217,7 @@ void error() {
 char aux[BUFSIZE] = { 0 };
 
 void handle_error(char * number) {
-	const char * error_text = "-ERR Connection error\r\n";
+	const char * error_text = "-ERR Connection error or malformed mail\r\n";
 	const char * filePath = get_transformed_mail_file_path(number);
   FILE * transformed_mail = fopen(filePath, "w");
 	fwrite(error_text, CHARACTER_SIZE, strlen(error_text), transformed_mail);

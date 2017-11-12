@@ -545,7 +545,7 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf
         //reading responses from server
         if ( FD_ISSET(descriptors_arrays->server_sockets_read[i] , readfds) ) {
             //If RETR was invoked, then its reply is redirected to a file instead of the client.
-            if ((*info_clients)[i].retr_invoked == 1 && (settings.censurable != NULL || settings.cmd != NULL) ){
+            if ((*info_clients)[i].retr_invoked == 1){
                 pid_t pid, parent_pid;
 
                 //So that the parent knows he'll have a child (to write into the pipe instead of client)
@@ -647,8 +647,8 @@ void handleManagementRequests(int k, int **conf_sockets_array, struct sockaddr_i
     for(int  l = 0 ; l < BUFSIZE ; l++ ) {
         aux_conf_buf[l] = '\0';
     }
-    int handleResponse = read( conf_ds , aux_conf_buf, BUFSIZE);   
-            
+    int handleResponse = read( conf_ds , aux_conf_buf, BUFSIZE); 
+
     if( handleResponse == 0 ) {
         //Somebody disconnected , get his details and print
         getpeername(conf_ds , (struct sockaddr*)conf_address , (socklen_t*)conf_addr_len);
@@ -679,12 +679,12 @@ void handleManagementRequests(int k, int **conf_sockets_array, struct sockaddr_i
                         log_err = 1; 
                     break;
         case GCC:   if(metrics.cc_on == 1) {
-                        if ( write( conf_ds , cc_msg, strlen(cc_msg) ) != strlen(cc_msg) )
-                            log_err = 1; 
                         snprintf( number_of_cc, 11, "%d", metrics.concurrent_connections );
                         number_of_cc[strlen(number_of_cc)] = '\n';
-                        printf("%s\n", number_of_cc);
-                        if ( write( conf_ds , number_of_cc, strlen(number_of_cc) ) != strlen(number_of_cc) )
+                        char gcc_response[strlen(cc_msg)+strlen(number_of_cc)];
+                        strcpy(gcc_response, cc_msg);
+                        strcat(gcc_response, number_of_cc);
+                        if ( write( conf_ds , gcc_response, strlen(gcc_response) ) != strlen(gcc_response) )
                             log_err = 1;
                     }
                     else{
@@ -693,11 +693,12 @@ void handleManagementRequests(int k, int **conf_sockets_array, struct sockaddr_i
                     }
                     break;
         case GHA:   if(metrics.ha_on == 1) {
-                        if ( write( conf_ds , ha_msg, strlen(ha_msg) ) != strlen(ha_msg) )
-                            log_err = 1; 
                         snprintf( number_of_ha, 11, "%d", metrics.historical_accesses );
                         number_of_ha[strlen(number_of_ha)] = '\n';
-                        if ( write( conf_ds , number_of_ha, strlen(number_of_ha) ) != strlen(number_of_ha) )
+                        char gha_response[strlen(ha_msg)+strlen(number_of_ha)];
+                        strcpy(gha_response, ha_msg);
+                        strcat(gha_response, number_of_ha);
+                        if ( write( conf_ds , gha_response, strlen(gha_response) ) != strlen(gha_response) )
                             log_err = 1;
                     }
                     else {
@@ -706,11 +707,12 @@ void handleManagementRequests(int k, int **conf_sockets_array, struct sockaddr_i
                     }
                     break;
         case GTB:   if(metrics.tb_on == 1) {
-                        if ( write( conf_ds , tb_msg, strlen(tb_msg) ) != strlen(tb_msg) )
-                            log_err = 1;
                         snprintf( number_of_tb, 21, "%lu", metrics.transfered_bytes );
                         number_of_tb[strlen(number_of_tb)] = '\n';
-                        if ( write( conf_ds , number_of_tb, strlen(number_of_tb) ) != strlen(number_of_tb) )
+                        char gtb_response[strlen(tb_msg)+strlen(number_of_tb)];
+                        strcpy(gtb_response, tb_msg);
+                        strcat(gtb_response, number_of_tb);
+                        if ( write( conf_ds , gtb_response, strlen(gtb_response) ) != strlen(gtb_response) )
                             log_err = 1;
                     }
                     else {
@@ -786,7 +788,17 @@ void readFromClient(int i, struct DescriptorsArrays *descriptors_arrays, struct 
     }
     //Handle client conection
     int handleResponse = read( descriptors_arrays->client_sockets_read[i] , aux_buf, size_to_write(buffer[i][1]));
+    /*printf("can read: %d\n", buffer_can_read(buffer[i][0]));
+    printf("can read: %d\n", buffer_can_read(buffer[i][1]));
+    char c;*/
+    /*&& recv(descriptors_arrays->server_sockets_read[i], &c, 1, MSG_PEEK) <= 0*/
     if( handleResponse == 0 ) {
+
+        /*int count;
+        ioctl(descriptors_arrays->server_sockets_read[i], FIONREAD, &count);
+        printf("count: %d\n", count );
+        if( buffer_can_read(buffer[i][0]) == 0 && buffer_can_read(buffer[i][1]) == 0 && count <= 0 )  {
+        */
         //Somebody disconnected , get his details and print
         getpeername(descriptors_arrays->client_sockets_read[i] , (struct sockaddr*)client_address , (socklen_t*)client_addr_len);
         printf("Host disconnected , ip %s , port %d \n" , inet_ntoa((*client_address).sin_addr) , ntohs((*client_address).sin_port));
@@ -803,6 +815,8 @@ void readFromClient(int i, struct DescriptorsArrays *descriptors_arrays, struct 
         buffer_reset(buffer[i][1]);
 
         writeLog(" Client disconnected\n", proxy_log);
+    //}   
+
     }
     else if(handleResponse < 0) {
         writeLog(" read failed\n", proxy_errors_log);
@@ -869,8 +883,11 @@ void writeToServer(int i, struct DescriptorsArrays *descriptors_arrays, struct b
         else if( cmd == RETR ){
             //to see if command is 'RETR n', it needs to escape the first 6 chars (counting \n at the end)
             if (commandLength(aux_buf+total_rbytes) >= 6){
-                (*info_clients)[i].retr_invoked = 1;
-                printf("RETR invoked\n");
+                //There's no need to parse mail if this condition is false
+                if( (settings.censurable != NULL || settings.cmd != NULL) ) {
+                    (*info_clients)[i].retr_invoked = 1;
+                    printf("RETR invoked\n");
+                }
             }
         }
         else if ( cmd == CAPA && first_cmd ){
@@ -955,20 +972,12 @@ void handleChildProcess(int i) {
 
     //This is where we should call the transformation program and that program should change the files.
     if(settings.censurable != NULL)
-        system("./testT");
+        system("./stripmime");
     else if(settings.cmd != NULL) {
         char sys_command[strlen(settings.cmd)+36];    
         strcpy(sys_command, settings.cmd);
         strcat(sys_command, file_path_retr);
         strcat(sys_command, " > ");
-        strcat(sys_command, file_path_resp);    
-        system(sys_command);
-    }
-    else {
-        char sys_command[37];
-        strcpy(sys_command, "cp ");
-        strcat(sys_command, file_path_retr);
-        strcat(sys_command, " ");
         strcat(sys_command, file_path_resp);    
         system(sys_command);
     }

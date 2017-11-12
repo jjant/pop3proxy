@@ -71,7 +71,6 @@ int parseServerForCAPA(char b[]){
     return 0;
 }
 
-//Almost nothing is implemented
 int parseConfigCommand(char b[]){
     enum Response { ERROR = 0, OK, GCC, GHA, GTB, VN, PP, MP };
     
