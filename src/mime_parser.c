@@ -216,11 +216,9 @@ void error() {
 
 char aux[BUFSIZE] = { 0 };
 
-void handle_error(int number) {
+void handle_error(char * number) {
 	const char * error_text = "-ERR Connection error\r\n";
 	const char * filePath = get_transformed_mail_file_path(number);
-	// remove(filePath);
-	printf("\n\n\nhola%s\n\n\n\n", filePath);
   FILE * transformed_mail = fopen(filePath, "w");
 	fwrite(error_text, CHARACTER_SIZE, strlen(error_text), transformed_mail);
 	fclose(transformed_mail);
@@ -232,8 +230,8 @@ int mime_parser(char * filter_medias, char * filter_message, char * client_numbe
 	state = HEADER_NAME;
 	read_chars = COMMON;
 
-	char * retrieved_mail_file_path  = get_retrieved_mail_file_path(client_number[0]);
-  char * transformed_mail_file_path = get_transformed_mail_file_path(client_number[0]);
+	char * retrieved_mail_file_path  = get_retrieved_mail_file_path(client_number);
+  char * transformed_mail_file_path = get_transformed_mail_file_path(client_number);
 
 	FILE * retrieved_mail   = fopen(retrieved_mail_file_path, "r");
 	FILE * transformed_mail = fopen(transformed_mail_file_path, "a");
@@ -308,9 +306,8 @@ int mime_parser(char * filter_medias, char * filter_message, char * client_numbe
   fclose(retrieved_mail);
   fclose(transformed_mail);
 
-	printf("\nstate: %d\n\n", state);
 	if (state == TRANSPARENT) {
- 		handle_error(client_number[0]);
+ 		handle_error(client_number);
 	}
 
  	return 0;

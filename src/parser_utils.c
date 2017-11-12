@@ -35,8 +35,8 @@ void print_env_vars(char *filter_medias, char *filter_message, char *pop3_filter
 	printf("[[END PRINT ENV VARS]]\n\n");
 }
 
-static char * get_path(char * prototype_path, char * client_number) {
-	char * new_path = malloc(strlen(prototype_path));
+char * get_path(char * prototype_path, char * client_number) {
+	char * new_path = malloc(strlen(prototype_path) + 1);
 	strcpy(new_path, prototype_path);
 
 	#define MAIL_CLIENT_INDEX 15
@@ -53,13 +53,12 @@ static char * get_path(char * prototype_path, char * client_number) {
 			}
 	}
 
+	new_path[strlen(prototype_path)] = '\0';
 	return new_path;
 }
 
 char * get_retrieved_mail_file_path(char * client_number) {
 		return get_path("./retr_mail_nnnn", client_number);
-    // char * prototype_path = ;
-  	// char * retrieved_mail_file_path = malloc(strlen(prototype_path));
     // strcpy(retrieved_mail_file_path, prototype_path);
 		//
     // #define MAIL_CLIENT_INDEX 15
