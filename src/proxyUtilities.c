@@ -24,6 +24,7 @@ pthread_t               threadForConnection;
 extern struct Metrics   metrics;
 extern struct Settings  settings;
 extern FILE             *proxy_log;
+extern FILE             *proxy_errors_log;
 extern FILE             *retrieved_mail;
 extern FILE             *transformed_mail;
 extern int              **pipes_fd;
@@ -71,9 +72,7 @@ void readArguments(int argc, char *argv[]) {
     int     message_multiple_lines  = 0;
     int     error                   = 0;
 
-    //Especificamos las opciones. Aquellas que aparecen seguidas de el
-    //caracter ':' indican que requieren un argumento.
-
+    //':' indicates that an argument is required.
     while ((option = getopt(argc, argv,"e:hl:L:m:M:o:p:P:t:v")) != -1) {
         switch (option) {
             case 'e' : 
@@ -82,7 +81,21 @@ void readArguments(int argc, char *argv[]) {
                 fp = freopen(settings.error_file, "a", stderr);
                 break;
             case 'h' : 
-                printf("No help available, try commands one by one... \n");
+                printf("HELP:\n");
+                printf("proxy [options] servidor-origen\n");
+                printf("OPTIONS:\n");
+                printf("        -h\n");
+                printf("        -v\n");
+                printf("        -e archivo-de-error\n");
+                printf("        -l dirección-pop3\n");
+                printf("        -L dirección-de-management\n");
+                printf("        -m mensaje-de-reemplazo\n");
+                printf("        -M media-types-censurables\n");
+                printf("        -o puerto-de-management\n");
+                printf("        -p puerto-local\n");
+                printf("        -P puerto-origen\n");
+                printf("        -t cmd\n");
+                printf("\n");
                 exit(0);
                 break;
             case 'l' :
@@ -139,16 +152,19 @@ void readArguments(int argc, char *argv[]) {
 }
 
 void configureSocket(int* sock, int dom, int type, int prot, int level, int optname, int *optval, struct sockaddr_in *address, int *addr_len, int port, char *if_addr) {
-
     //create a master socket for clients and a configuration master socket
     if( (*sock = socket(dom , type , prot)) == 0) {
+        writeLog("master socket failed\n", proxy_errors_log);
         perror("master socket failed");
-        exit(EXIT_FAILURE);
+        close(*sock);
+        return;
     }
     //set master sockets to allow multiple connections
     if( setsockopt(*sock, level, optname, (char *)optval, sizeof(*optval)) < 0 ) {
+        writeLog(" setsockopt failed\n", proxy_errors_log);
         perror("setsockopt failed");
-        exit(EXIT_FAILURE);
+        close(*sock);
+        return;
     }
 
     //type of socket for client and config
@@ -158,14 +174,18 @@ void configureSocket(int* sock, int dom, int type, int prot, int level, int optn
    
     //bind the master client socket to localhost port 1110, and the config socket to 9090
     if (bind(*sock, (struct sockaddr *)address, sizeof(*address))<0) {
-        perror("bind master socket failed");
-        exit(EXIT_FAILURE);
+        writeLog(" bind socket failed\n", proxy_errors_log);
+        perror("bind socket failed");
+        close(*sock);
+        return;
     }
          
     //try to specify maximum of MAXCLIENTS pending connections for the master sockets. CHECK MAX AMOUNT OF FD...
     if (listen(*sock, MAXCLIENTS) < 0) {
+        writeLog(" listen failed\n", proxy_errors_log);
         perror("listen failed");
-        exit(EXIT_FAILURE);
+        close(*sock);
+        return;
     }
 }
 
@@ -174,8 +194,9 @@ void setSocketType( struct sockaddr_in* client_address, int port, char *if_addr 
     client_address->sin_family      = AF_INET;
     if(if_addr == NULL)
         client_address->sin_addr.s_addr = INADDR_ANY;
-    else
-        client_address->sin_addr.s_addr = inet_addr(if_addr); 
+    else {
+        client_address->sin_addr.s_addr = inet_addr(if_addr);
+    }
     client_address->sin_port        = htons( port );
 }
 
@@ -232,18 +253,19 @@ int addDescriptors( struct DescriptorsArrays* dA, int **conf_sockets_array, fd_s
 }
 
 void handleConfConnection(int conf_master_socket, struct sockaddr_in *conf_address, int *conf_addr_len, int **conf_sockets_array, int *conf_sockets_amount, pthread_mutex_t *mtx){
-    int     new_conf_socket;
-    int     add_fd              = 1;
-    char    *message            = "Connecting to POP3 proxy for configuration... \r\n";
+    int         new_conf_socket;
+    int         add_fd              = 1;
+    char        *message            = "Connecting to POP3 proxy for configuration... \r\n";
 
     if ((new_conf_socket = accept(conf_master_socket, (struct sockaddr *)conf_address, (socklen_t*)conf_addr_len))<0) {
+        writeLog(" ---config--- accept failed\n", proxy_errors_log);
         perror("---config--- accept failed");
         return;
-        //exit(EXIT_FAILURE);
     }
 
     //send new connection greeting message
     if( write(new_conf_socket, message, strlen(message)) != strlen(message) ) {
+        writeLog(" ---config--- write greeting message failed\n", proxy_errors_log);
         perror("---config--- write greeting message failed");
     }
 
@@ -264,7 +286,7 @@ void handleConfConnection(int conf_master_socket, struct sockaddr_in *conf_addre
 
     printf("New configuration connection: Socket fd: %d , ip: %s , port: %d\n" , new_conf_socket , inet_ntoa(conf_address->sin_addr) , ntohs(conf_address->sin_port));
 
-    fwrite("Admin connected\n", 1, 16, proxy_log);
+    writeLog(" Admin connected\n", proxy_log);
     return;
 }
 
@@ -285,8 +307,10 @@ void handleNewConnection(int ms, struct sockaddr_in *ca, int *cal, struct Descri
     threadArgs->buffers         = b;
     threadArgs->info_clients    = info_clients;
     //create new thread to resolve domain and connect to server. When it's done, add all file descriptors to arrays
-    if ( pthread_create( &threadForConnection, NULL, &handleThreadForConnection, (void*) threadArgs) !=0 )
+    if ( pthread_create( &threadForConnection, NULL, &handleThreadForConnection, (void*) threadArgs) !=0 ) {
+        writeLog(" thread creation failed\n", proxy_errors_log);
         perror("thread creation failed");
+    }
     return;
 
 }
@@ -299,17 +323,17 @@ void* handleThreadForConnection(void* args) {
     struct addrinfo     hints, *servinfo, *p;
     // Server address structs for IPv4 or IPv6
     struct sockaddr_in  servAddr4;
-    struct sockaddr_in6 servAddr6;     
-
+    struct sockaddr_in6 servAddr6; 
+    
     pthread_detach(pthread_self());
 
     tArgs = (struct ThreadArgs *)args;
 
     if ((new_client_socket = accept(tArgs->master_socket, (struct sockaddr *)tArgs->client_address, (socklen_t*)tArgs->client_addr_len))<0) {
+        writeLog(" accept failed\n", proxy_errors_log);
         perror("accept failed");
         pthread_kill( tArgs->tId, SIGUSR1);
         pthread_exit(0);
-        //exit(EXIT_FAILURE);
     }
 
     memset(&servAddr4, 0, sizeof(servAddr4)); // Zero out structure
@@ -320,46 +344,51 @@ void* handleThreadForConnection(void* args) {
     
     //IPv4
     if( inet_pton(AF_INET, settings.origin_server, &servAddr4.sin_addr.s_addr) == 1 ) {
+        printf("IPv4\n");
         servAddr4.sin_port = htons(settings.origin_port);
         if ((new_server_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) <= 0) {
+            writeLog(" server socket failed\n", proxy_errors_log);
             perror("server socket failed");
             close(new_client_socket);
             pthread_kill( tArgs->tId, SIGUSR1);
             pthread_exit(0);
-            //exit(EXIT_FAILURE);
-            return NULL;
         }
         if (connect(new_server_socket, (struct sockaddr *) &servAddr4, sizeof(servAddr4)) < 0) {
+            char *err_msg = "Error: connection refused.\n";
+            writeLog(" connect failed\n", proxy_errors_log);
             perror("connect failed");
+            write( new_client_socket, err_msg, strlen(err_msg));
             close(new_client_socket);
             close(new_server_socket);
             pthread_kill( tArgs->tId, SIGUSR1);
             pthread_exit(0);
-            //exit(EXIT_FAILURE);
         } 
     }
     //IPv6
     else if ( inet_pton(AF_INET6, settings.origin_server, &servAddr6.sin6_addr.s6_addr) == 1 ) {
+        printf("IPv6\n");
         servAddr6.sin6_port = htons(settings.origin_port);
         if ((new_server_socket = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP)) <= 0) {
+            writeLog(" server socket failed\n", proxy_errors_log);
             perror("server socket failed");
             close(new_client_socket);
             pthread_kill( tArgs->tId, SIGUSR1);
             pthread_exit(0);
-            //exit(EXIT_FAILURE);
-            return NULL;
         }
         if (connect(new_server_socket, (struct sockaddr *) &servAddr6, sizeof(servAddr6)) < 0) {
+            char *err_msg = "Error: connection refused.\n";
+            writeLog(" connect failed\n", proxy_errors_log);
             perror("connect failed");
+            write( new_client_socket, err_msg, strlen(err_msg));
             close(new_client_socket);
             close(new_server_socket);
             pthread_kill( tArgs->tId, SIGUSR1);
             pthread_exit(0);
-            //exit(EXIT_FAILURE);
         } 
     }
     //domain name
     else {
+        printf("Domain name\n");
         memset(&hints, 0, sizeof hints);
         hints.ai_family     = AF_INET;
         hints.ai_socktype   = SOCK_STREAM;
@@ -367,6 +396,7 @@ void* handleThreadForConnection(void* args) {
         //in case of receiving an IP, the creation of this thread is unnecessary. Check later.
         //change localhost and pop3 strings.
         if ((rv = getaddrinfo(settings.origin_server, "pop3", &hints, &servinfo)) != 0) {
+            writeLog(" DNS resolution failed\n", proxy_errors_log);
             perror("DNS resolution failed");
             close(new_client_socket);
             pthread_kill( tArgs->tId, SIGUSR1);
@@ -375,26 +405,29 @@ void* handleThreadForConnection(void* args) {
 
         // loop through all the results and connect to the first we can
         for(p = servinfo; p != NULL; p = p->ai_next) {
-            if ((new_server_socket = socket(p->ai_family, p->ai_socktype, 0)) <= 0) {
-                perror("server socket failed");
+            if ((new_server_socket = socket(p->ai_family, p->ai_socktype, 0)) <= 0)
                 continue;
-            }
-
-            if (connect(new_server_socket, p->ai_addr, p->ai_addrlen) < 0) {
-                perror("connect failed");
+            if (connect(new_server_socket, p->ai_addr, p->ai_addrlen) < 0)
                 continue;
-            }
             // if we get here, we must have connected successfully
             break; 
         }
         if (p == NULL) {
             // looped off the end of the list with no connection
+            char *err_msg = "Error: connection refused.\n";
+            write( new_client_socket, err_msg, strlen(err_msg));
+            writeLog(" all connects failed\n", proxy_errors_log);
             perror("all connects failed");
+            close(new_client_socket);
+            close(new_server_socket);
+            pthread_kill( tArgs->tId, SIGUSR1);
+            pthread_exit(0);
         }
     }
              
     //send new connection greeting message
     if( write(new_client_socket, message, strlen(message)) != strlen(message) ) {
+        writeLog(" write greeting message failed\n", proxy_errors_log);
         perror("write greeting message failed");
     }
              
@@ -463,19 +496,6 @@ void reserveSpace(struct ThreadArgs * tArgs){
     client_buffer = malloc(sizeof(struct buffer));
     server_buffer = malloc(sizeof(struct buffer));
 
-    //Couldn't initialize with buffer_init -> Hard coded init. Check in the future.
-    /*aux_buf_c = malloc(BUFSIZE*sizeof(char));
-    aux_buf_s = malloc(BUFSIZE*sizeof(char));
-
-    for(int j = 0; j < BUFSIZE; j++) {
-        aux_buf_c[j] = '\0';
-        aux_buf_s[j] = '\0';
-    }
-
-    buffer_init(&client_buffer, BUFSIZE, aux_buf_c);
-    buffer_init(&server_buffer, BUFSIZE, aux_buf_s);
-    */ 
-
     client_buffer->data = malloc(BUFSIZE*sizeof(char));
     server_buffer->data = malloc(BUFSIZE*sizeof(char));    
 
@@ -524,19 +544,20 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf
 
         //reading responses from server
         if ( FD_ISSET(descriptors_arrays->server_sockets_read[i] , readfds) ) {
-
             //If RETR was invoked, then its reply is redirected to a file instead of the client.
-            if ((*info_clients)[i].retr_invoked == 1 ){
+            if ((*info_clients)[i].retr_invoked == 1 && (settings.censurable != NULL || settings.cmd != NULL) ){
                 pid_t pid, parent_pid;
 
                 //So that the parent knows he'll have a child (to write into the pipe instead of client)
                 (descriptors_arrays->server_commands_to_process[i]) = 1;
 
                 if(pipe(pipes_fd[i]) == -1) {
+                    writeLog(" pipe 1 failed\n", proxy_errors_log);
                     perror("pipe 1 failed");
                     return;
                 }
                 if(pipe(pipes_fd[i]+2) == -1) {
+                    writeLog(" pipe 2 failed\n", proxy_errors_log);
                     perror("pipe 2 failed");
                     return;   
                 }
@@ -554,6 +575,7 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf
                     exit(0);
                 }
                 else if (pid < (pid_t) 0) {
+                    writeLog(" fork failed\n", proxy_errors_log);
                     perror ("fork failed");
                 }
                 else {
@@ -597,123 +619,125 @@ void handleManagementRequests(int k, int **conf_sockets_array, struct sockaddr_i
     enum    Response                { ERROR = 0, OK, GCC, GHA, GTB, VN, PP, MP };
     char    aux_conf_buf[BUFSIZE];
     int     conf_ds, resp;
-
+    
     conf_ds = (*conf_sockets_array)[k];
-            const char  *ok_msg  = "-OK-\n";
-            const char  *er_msg  = "-ERROR-\n";
-            const char  *cc_msg  = "-Concurrent connections-\n";
-            const char  *ha_msg  = "-Historical accesses-\n";
-            const char  *tb_msg  = "-Transfered Bytes-\n";
-            const char  *cc_off  = "-Concurrent connections metrics are off-\n";
-            const char  *ha_off  = "-Historical accesses metrics are off-\n";
-            const char  *tb_off  = "-Transfered Bytes metrics are off-\n";
-            //Max number must fit in array, plus 1 space for \n
-            //for int 
-            char        number_of_cc[11];
-            char        number_of_ha[11];
-            //for unsigned long 
-            char        number_of_tb[21];
+    const char  *ok_msg  = "-OK-\n";
+    const char  *er_msg  = "-ERROR-\n";
+    const char  *cc_msg  = "-Concurrent connections-\n";
+    const char  *ha_msg  = "-Historical accesses-\n";
+    const char  *tb_msg  = "-Transfered Bytes-\n";
+    const char  *cc_off  = "-Concurrent connections metrics are off-\n";
+    const char  *ha_off  = "-Historical accesses metrics are off-\n";
+    const char  *tb_off  = "-Transfered Bytes metrics are off-\n";
+    //Max number must fit in array, plus 1 space for \n
+    //for int 
+    char        number_of_cc[11];
+    char        number_of_ha[11];
+    //for unsigned long 
+    char        number_of_tb[21];
 
-            for(int m = 0; m < 11; m++){
-                number_of_cc[m] = '\0';
-                number_of_ha[m] = '\0';
-            }
-            for(int n = 0; n < 21; n++)
-                number_of_tb[n] = '\0';
+    for(int m = 0; m < 11; m++){
+        number_of_cc[m] = '\0';
+        number_of_ha[m] = '\0';
+    }
+    for(int n = 0; n < 21; n++)
+        number_of_tb[n] = '\0';
 
-            printf("---config--- CONNECTION %d, ENTER READ\n", k);
-            for(int  l = 0 ; l < BUFSIZE ; l++ ) {
-                aux_conf_buf[l] = '\0';
-            }
-            int handleResponse = read( conf_ds , aux_conf_buf, BUFSIZE);   
+    printf("---config--- CONNECTION %d, ENTER READ\n", k);
+    for(int  l = 0 ; l < BUFSIZE ; l++ ) {
+        aux_conf_buf[l] = '\0';
+    }
+    int handleResponse = read( conf_ds , aux_conf_buf, BUFSIZE);   
             
-            if( handleResponse == 0 ) {
-                //Somebody disconnected , get his details and print
-                getpeername(conf_ds , (struct sockaddr*)conf_address , (socklen_t*)conf_addr_len);
-                printf("---config--- Config Host disconnected , ip %s , port %d \n" , inet_ntoa((*conf_address).sin_addr) , ntohs((*conf_address).sin_port));
-                      
-                //Close the socket and mark as 0 in list for reuse, or
-                printf("---config--- CONNECTION %d, ADMIN CLOSES\n", k);
-                close( conf_ds );
-                (*conf_sockets_array)[k] = 0;
-                fwrite("Admin disconnected\n", 1, 19, proxy_log);
-            }
-            else if(handleResponse < 0) {
-                perror("---config--- read failed");
-            }
-            else {
-                printf("---config--- Read something from admin\n");
-                //For now, it only echoes.
-                //We need to parse aux_conf_buf content and apply the configuration
-                resp = parseConfigCommand(aux_conf_buf);
-                switch (resp) {
-                case ERROR: if ( write( conf_ds , er_msg, strlen(er_msg) ) != strlen(er_msg) ) {
-                                perror("---config--- write failed"); 
-                            }
-                            break;   
-                case OK:    if ( write( conf_ds , ok_msg, strlen(ok_msg) ) != strlen(ok_msg) ) {
-                                perror("---config--- write failed"); 
-                            }
-                            break;
-                case GCC:   if(metrics.cc_on == 1) {
-                                if ( write( conf_ds , cc_msg, strlen(cc_msg) ) != strlen(cc_msg) )
-                                    perror("---config--- write failed"); 
-                                snprintf( number_of_cc, 11, "%d", metrics.concurrent_connections );
-                                number_of_cc[strlen(number_of_cc)] = '\n';
-                                printf("%s\n", number_of_cc);
-                                if ( write( conf_ds , number_of_cc, strlen(number_of_cc) ) != strlen(number_of_cc) )
-                                    perror("---config--- write failed"); 
-                            }
-                            else{
-                                if ( write( conf_ds , cc_off, strlen(cc_off) ) != strlen(cc_off) )
-                                    perror("---config--- write failed"); 
-                            }
-                            break;
-                case GHA:   if(metrics.ha_on == 1) {
-                                if ( write( conf_ds , ha_msg, strlen(ha_msg) ) != strlen(ha_msg) )
-                                    perror("---config--- write failed"); 
-                                snprintf( number_of_ha, 11, "%d", metrics.historical_accesses );
-                                number_of_ha[strlen(number_of_ha)] = '\n';
-                                if ( write( conf_ds , number_of_ha, strlen(number_of_ha) ) != strlen(number_of_ha) )
-                                    perror("---config--- write failed"); 
-                            }
-                            else {
-                                if ( write( conf_ds , ha_off, strlen(ha_off) ) != strlen(ha_off) )
-                                    perror("---config--- write failed");    
-                            }
-                            break;
-                case GTB:   if(metrics.tb_on == 1) {
-                                if ( write( conf_ds , tb_msg, strlen(tb_msg) ) != strlen(tb_msg) )
-                                    perror("---config--- write failed"); 
-                                snprintf( number_of_tb, 21, "%lu", metrics.transfered_bytes );
-                                number_of_tb[strlen(number_of_tb)] = '\n';
-                                if ( write( conf_ds , number_of_tb, strlen(number_of_tb) ) != strlen(number_of_tb) )
-                                    perror("---config--- write failed"); 
-                            }
-                            else {
-                                if ( write( conf_ds , tb_off, strlen(tb_off) ) != strlen(tb_off) )
-                                    perror("---config--- write failed");
-                            }
-                            break;
-                case VN:    if ( write( conf_ds , settings.version, strlen(settings.version) ) != strlen(settings.version) ) {
-                                perror("---config--- write failed"); 
-                            }
-                            break;
-                case PP:    close(*master_socket);
-                            configureSocket(master_socket, AF_INET, SOCK_STREAM, IPPROTO_TCP, SOL_SOCKET, SO_REUSEADDR, opt_ms, client_address, client_addr_len, settings.pop3_port, settings.pop3_address);
-                            if ( write( conf_ds , ok_msg, strlen(ok_msg) ) != strlen(ok_msg) ) {
-                                perror("---config--- write failed"); 
-                            }
-                            break;
-                case MP:    close(*conf_master_socket);
-                            configureSocket(conf_master_socket, PF_INET, SOCK_STREAM, IPPROTO_SCTP, SOL_SOCKET, SO_REUSEADDR, opt_cms, conf_address, conf_addr_len, settings.management_port, settings.management_address);
-                            if ( write( conf_ds , ok_msg, strlen(ok_msg) ) != strlen(ok_msg) ) {
-                                perror("---config--- write failed"); 
-                            }
-                            break;
-                default:    break;
-                }
-            }
+    if( handleResponse == 0 ) {
+        //Somebody disconnected , get his details and print
+        getpeername(conf_ds , (struct sockaddr*)conf_address , (socklen_t*)conf_addr_len);
+        printf("---config--- Config Host disconnected , ip %s , port %d \n" , inet_ntoa((*conf_address).sin_addr) , ntohs((*conf_address).sin_port));
+              
+        //Close the socket and mark as 0 in list for reuse, or
+        printf("---config--- CONNECTION %d, ADMIN CLOSES\n", k);
+        close( conf_ds );
+        (*conf_sockets_array)[k] = 0;
+
+        writeLog(" Admin disconnected\n", proxy_log);
+    }
+    else if(handleResponse < 0) {
+        writeLog(" ---config--- read failed\n", proxy_errors_log);
+        perror("---config--- read failed");
+    }
+    else {
+        printf("---config--- Read something from admin\n");
+        //For now, it only echoes.
+        //We need to parse aux_conf_buf content and apply the configuration
+        resp = parseConfigCommand(aux_conf_buf);
+        int log_err = 0;
+        switch (resp) {
+        case ERROR: if ( write( conf_ds , er_msg, strlen(er_msg) ) != strlen(er_msg) )
+                        log_err = 1; 
+                    break;   
+        case OK:    if ( write( conf_ds , ok_msg, strlen(ok_msg) ) != strlen(ok_msg) ) 
+                        log_err = 1; 
+                    break;
+        case GCC:   if(metrics.cc_on == 1) {
+                        if ( write( conf_ds , cc_msg, strlen(cc_msg) ) != strlen(cc_msg) )
+                            log_err = 1; 
+                        snprintf( number_of_cc, 11, "%d", metrics.concurrent_connections );
+                        number_of_cc[strlen(number_of_cc)] = '\n';
+                        printf("%s\n", number_of_cc);
+                        if ( write( conf_ds , number_of_cc, strlen(number_of_cc) ) != strlen(number_of_cc) )
+                            log_err = 1;
+                    }
+                    else{
+                        if ( write( conf_ds , cc_off, strlen(cc_off) ) != strlen(cc_off) )
+                            log_err = 1; 
+                    }
+                    break;
+        case GHA:   if(metrics.ha_on == 1) {
+                        if ( write( conf_ds , ha_msg, strlen(ha_msg) ) != strlen(ha_msg) )
+                            log_err = 1; 
+                        snprintf( number_of_ha, 11, "%d", metrics.historical_accesses );
+                        number_of_ha[strlen(number_of_ha)] = '\n';
+                        if ( write( conf_ds , number_of_ha, strlen(number_of_ha) ) != strlen(number_of_ha) )
+                            log_err = 1;
+                    }
+                    else {
+                        if ( write( conf_ds , ha_off, strlen(ha_off) ) != strlen(ha_off) )
+                            log_err = 1;   
+                    }
+                    break;
+        case GTB:   if(metrics.tb_on == 1) {
+                        if ( write( conf_ds , tb_msg, strlen(tb_msg) ) != strlen(tb_msg) )
+                            log_err = 1;
+                        snprintf( number_of_tb, 21, "%lu", metrics.transfered_bytes );
+                        number_of_tb[strlen(number_of_tb)] = '\n';
+                        if ( write( conf_ds , number_of_tb, strlen(number_of_tb) ) != strlen(number_of_tb) )
+                            log_err = 1;
+                    }
+                    else {
+                        if ( write( conf_ds , tb_off, strlen(tb_off) ) != strlen(tb_off) )
+                            log_err = 1;
+                    }
+                    break;
+        case VN:    if ( write( conf_ds , settings.version, strlen(settings.version) ) != strlen(settings.version) )
+                        log_err = 1; 
+                    break;
+        case PP:    close(*master_socket);
+                    configureSocket(master_socket, AF_INET, SOCK_STREAM, IPPROTO_TCP, SOL_SOCKET, SO_REUSEADDR, opt_ms, client_address, client_addr_len, settings.pop3_port, settings.pop3_address);
+                    if ( write( conf_ds , ok_msg, strlen(ok_msg) ) != strlen(ok_msg) ) 
+                        log_err = 1;
+                    break;
+        case MP:    close(*conf_master_socket);
+                    configureSocket(conf_master_socket, PF_INET, SOCK_STREAM, IPPROTO_SCTP, SOL_SOCKET, SO_REUSEADDR, opt_cms, conf_address, conf_addr_len, settings.management_port, settings.management_address);
+                    if ( write( conf_ds , ok_msg, strlen(ok_msg) ) != strlen(ok_msg) )
+                        log_err = 1;
+                    break;
+        default:    break;
+        }
+        if(log_err == 1){
+            writeLog(" ---config--- write failed\n", proxy_errors_log);
+            perror("---config--- write failed");
+        }
+    }
 
 }
 
@@ -736,6 +760,7 @@ void writeToClient(int i, struct DescriptorsArrays *descriptors_arrays, struct b
 
     buffer_read_adv(buffer[i][1], rbytes);
     if ( write( descriptors_arrays->client_sockets_write[i], aux_buf, strlen(aux_buf)) != strlen(aux_buf)) {
+        writeLog(" write failed\n", proxy_errors_log);
         perror("write failed");       
     }  
     if ( !buffer_can_read(buffer[i][1]) ){
@@ -753,7 +778,7 @@ void writeToClient(int i, struct DescriptorsArrays *descriptors_arrays, struct b
 void readFromClient(int i, struct DescriptorsArrays *descriptors_arrays, struct buffer ****b, struct sockaddr_in *client_address, int *client_addr_len) {
     int             str_size;
     char            aux_buf[BUFSIZE];
-    struct buffer   ***buffer           = *b;    
+    struct buffer   ***buffer           = *b;  
  
     printf("CONNECTION %d, ENTER READ FROM CLIENT\n", i);
     for( int j = 0 ; j < BUFSIZE ; j++ ) {
@@ -776,9 +801,11 @@ void readFromClient(int i, struct DescriptorsArrays *descriptors_arrays, struct 
         descriptors_arrays->server_sockets_read[i] = 0;
         buffer_reset(buffer[i][0]);
         buffer_reset(buffer[i][1]);
-        fwrite("Client disconnected\n", 1, 20, proxy_log);
+
+        writeLog(" Client disconnected\n", proxy_log);
     }
     else if(handleResponse < 0) {
+        writeLog(" read failed\n", proxy_errors_log);
         perror("read failed");
     }
     else {
@@ -796,6 +823,7 @@ void readFromClient(int i, struct DescriptorsArrays *descriptors_arrays, struct 
         uint8_t *ptr    = buffer_write_ptr(buffer[i][0], &wbytes);
 
         if( wbytes < str_size ){
+            writeLog(" no space in buffer to read\n", proxy_errors_log);
             perror("no space in buffer to read");
         }
         memcpy(ptr, aux_buf, str_size);
@@ -810,7 +838,7 @@ void writeToServer(int i, struct DescriptorsArrays *descriptors_arrays, struct b
     char            aux_buf[BUFSIZE];
     int             cmd, keep_sending;
     struct buffer   ***buffer                         = *b;
-
+    
     printf("CONNECTION %d, ENTER WRITE TO SERVER\n", i);
     for( int j = 0 ; j < BUFSIZE ; j++ ) {
         aux_buf[j] = '\0';
@@ -860,6 +888,7 @@ void writeToServer(int i, struct DescriptorsArrays *descriptors_arrays, struct b
     } while ( keep_sending == 1);
             
     if ( write( descriptors_arrays->server_sockets_write[i], aux_buf, strlen(aux_buf)) != strlen(aux_buf)) {
+        writeLog(" write failed\n", proxy_errors_log);
         perror("write failed");       
     }
 
@@ -870,11 +899,11 @@ void writeToServer(int i, struct DescriptorsArrays *descriptors_arrays, struct b
 }
 
 void handleChildProcess(int i) {
-    char    child_aux_buf_in[BUFSIZE];
-    char    child_aux_buf_out[BUFSIZE];
-    char    conn_number[11];
-    int     pread, nread, num_size;
-
+    char        child_aux_buf_in[BUFSIZE];
+    char        child_aux_buf_out[BUFSIZE];
+    char        conn_number[11];
+    int         pread, nread, num_size;
+    
     for( int p = 0 ; p < BUFSIZE ; p++ ) {
         child_aux_buf_in[p]     = '\0';
         child_aux_buf_out[p]    = '\0';
@@ -948,6 +977,7 @@ void handleChildProcess(int i) {
     transformed_mail = fopen(file_path_resp, "r");
     while ((nread = fread(child_aux_buf_out, 1, BUFSIZE-1, transformed_mail)) > 0){
         if ( write( pipes_fd[i][3] , child_aux_buf_out, strlen(child_aux_buf_out)) != strlen(child_aux_buf_out) ) {
+            writeLog(" write failed\n", proxy_errors_log);
             perror("write failed");       
         }
         for( int p = 0 ; p < BUFSIZE ; p++ ) {
@@ -973,7 +1003,7 @@ void readFromServer(int i, struct DescriptorsArrays *descriptors_arrays, struct 
     int             str_size;
     char            aux_buf[BUFSIZE];
     struct buffer   ***buffer             = *b;
-
+    
     printf("CONNECTION %d, ENTER READ FROM SERVER\n", i);
     for( int j = 0 ; j < BUFSIZE ; j++ ) {
         aux_buf[j] = '\0';
@@ -1002,9 +1032,11 @@ void readFromServer(int i, struct DescriptorsArrays *descriptors_arrays, struct 
             descriptors_arrays->client_sockets_read[i] = 0;
             buffer_reset(buffer[i][1]);
         }      
-        fwrite("Server disconnected\n", 1, 20, proxy_log);            
+
+        writeLog(" Server disconnected\n", proxy_log);            
     }
     else if(handleResponse < 0) {
+        writeLog(" read failed\n", proxy_errors_log);
         perror("read failed");
     }
     else {
@@ -1038,6 +1070,7 @@ void readFromServer(int i, struct DescriptorsArrays *descriptors_arrays, struct 
         //write in first pipe for child process
         if((descriptors_arrays->server_commands_to_process[i]) == 1) {
             if ( write( pipes_fd[i][1] , aux_buf, str_size) != str_size ) {
+                writeLog(" write failed\n", proxy_errors_log);
                 perror("write failed");       
             }
         } 
@@ -1046,6 +1079,7 @@ void readFromServer(int i, struct DescriptorsArrays *descriptors_arrays, struct 
             size_t  wbytes  = 0;
             uint8_t *ptr    = buffer_write_ptr(buffer[i][1], &wbytes);
             if( wbytes < str_size ){
+                writeLog(" no space in buffer to read\n", proxy_errors_log);
                 perror("no space in buffer to read");
             }
             memcpy(ptr, aux_buf, str_size);
@@ -1061,7 +1095,7 @@ void readFromPipe(int i, struct DescriptorsArrays *descriptors_arrays, struct bu
     int             str_size;
     char            aux_buf[BUFSIZE];
     struct buffer   ***buffer                 = *b;
-
+    
     printf("CONNECTION %d, ENTER READ FROM PIPE\n", i);
     for( int j = 0 ; j < BUFSIZE ; j++ ) {
         aux_buf[j] = '\0';
@@ -1086,6 +1120,7 @@ void readFromPipe(int i, struct DescriptorsArrays *descriptors_arrays, struct bu
         size_t  wbytes  = 0;
         uint8_t *ptr    = buffer_write_ptr(buffer[i][1], &wbytes);
         if( wbytes < str_size ){
+            writeLog(" no space in buffer to read\n", proxy_errors_log);
             perror("no space in buffer to read");
         }
         memcpy(ptr, aux_buf, str_size);
@@ -1114,4 +1149,14 @@ void setEnvironmentVars( int i, const char *name ) {
     setenv("POP3_SERVER", settings.origin_server, 1); 
     if(name != NULL)
         setenv("POP3_USERNAME", name, 1);
+}
+
+void writeLog(const char *msg, FILE *f) {
+    struct tm   *sTm;
+    char        time_buf[20];
+    time_t now = time (0);
+    sTm = gmtime (&now);
+    strftime (time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", sTm);
+    fwrite(time_buf, 1, strlen(time_buf), f);
+    fwrite(msg, 1, strlen(msg), f);
 }

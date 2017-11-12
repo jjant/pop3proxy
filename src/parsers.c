@@ -104,13 +104,13 @@ int parseConfigCommand(char b[]){
         printf("---New management address: %s---\n", settings.management_address);
         return OK;
     }
-    else if ( strncmp( b, "RM ", 3) == 0 ){                                    //OK, but not used yet
+    else if ( strncmp( b, "RM ", 3) == 0 ){                                    //OK
         //Set replacement message
         settings.replacement_message = malloc (strlen(b+3));
         memcpy(settings.replacement_message, b+3, strlen(b+3)+1);
         return OK;
     }
-    else if ( strncmp( b, "CT ", 3) == 0 ){                                    //OK, but not used yet
+    else if ( strncmp( b, "CT ", 3) == 0 ){                                    //OK
         //Set censurable types
         settings.censurable = malloc (strlen(b+3));
         memcpy(settings.censurable, b+3, strlen(b+3)+1);
@@ -138,7 +138,7 @@ int parseConfigCommand(char b[]){
         printf("---New origin port: %d---\n", settings.origin_port);
         return OK;
     }
-    else if ( strncmp( b, "CD ", 3) == 0 ){                                    //OK, but not used yet
+    else if ( strncmp( b, "CD ", 3) == 0 ){                                    //OK
         //Set command
         settings.cmd = malloc (strlen(b+3));
         memcpy(settings.cmd, b+3, strlen(b+3)+1);

@@ -18,6 +18,7 @@
 struct Metrics  metrics;
 struct Settings settings;
 FILE            *proxy_log;
+FILE            *proxy_errors_log;
 FILE            *retrieved_mail;
 FILE            *transformed_mail;
 int             **pipes_fd;
@@ -27,18 +28,16 @@ int             **pipes_fd;
  * It's needed to unlock select().
  */
 static void wake_handler(const int signal) {
+    writeLog(" Client connected\n", proxy_log);
     printf("SIGNAL RECEIVED.\n\n");
-    fwrite("Client connected\n", 1, 17, proxy_log);
     return;
 }
 
-/**
- * Provisory exit function.
- */
 static void finalize_pgm(const int signal) {
+    writeLog(" Proxy exiting\n", proxy_log);
     printf("\nEXITING PROGRAM.\n\n");
-    fwrite("Proxy exiting.\n", 1, 15, proxy_log);
     fclose(proxy_log);
+    fclose(proxy_errors_log);
     exit(0);
 }
 
@@ -97,8 +96,9 @@ int main(int argc, char *argv[])
     printf("Listening on port %d for POP3 clients...\n", settings.pop3_port);
     printf("Listening on port %d for configuration...\n\n", settings.management_port);
 
-    proxy_log = fopen("./proxy_log.txt", "a");
-    fwrite("Proxy started...\n", 1, 18, proxy_log);
+    proxy_log        = fopen("./proxy_log.txt", "a");
+    proxy_errors_log = fopen("./proxy_errors_log.txt", "a");
+    writeLog(" Proxy started\n", proxy_log);
     
     while(1){
         //clear the socket sets
@@ -124,7 +124,7 @@ int main(int argc, char *argv[])
         activity = pselect( max_sd + 1 , &readfds , &writefds , NULL , NULL, &emptyset);
 
         if ((activity < 0) && (errno!=EINTR)){
-            printf("select error");
+            //printf("select error");
         }
                   
         //If something happened on the master socket , then its an incoming client connection

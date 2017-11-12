@@ -1,8 +1,8 @@
 #ifndef PROXY_UTILITIES_H
 #define PROXY_UTILITIES_H
 
-#define BUFSIZE 128
-#define MAXCLIENTS 128
+#define BUFSIZE 1024
+#define MAXCLIENTS 1024
 
 struct DescriptorsArrays{
     int *client_sockets_read;
@@ -143,5 +143,7 @@ void readFromServer(int, struct DescriptorsArrays*, struct buffer****, struct so
 void readFromPipe(int, struct DescriptorsArrays*, struct buffer****);
 
 void setEnvironmentVars(int, const char*);
+
+void writeLog(const char*, FILE*);
 
 #endif

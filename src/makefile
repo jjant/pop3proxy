@@ -13,4 +13,4 @@ pop3_run:
 	./pop3.out
 
 clean:
-	rm proxy confClient testT proxy_log.txt
+	rm proxy confClient testT proxy_log.txt proxy_errors_log.txt
