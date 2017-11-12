@@ -12,6 +12,8 @@
 #define BUFSIZE 1024
 #define BUFFLEN 10000
 
+static int transition(char c, FILE * transformed_mail);
+
 typedef struct Buffer{
 	char buff[BUFFLEN];
 	int index;
@@ -47,10 +49,8 @@ void free_blacklist() {
 /*
 	Case insensitive string compare
 */
-int strcicmp(char *a, char const *b)
-{
+int strcicmp(char *a, char const *b) {
 	int ans = 0;
-	//printf("%s\n", a);
     for (;; a++, b++) {
         int d = tolower(*a) - tolower(*b);
         if (d != 0 || !*a){
@@ -178,8 +178,8 @@ void write_str_to_out_bufff(char* str, FILE * transformed_mail) {
 	}
 }
 
-void write_to_comp_buff(char c){
-	if(compBuf.index + 1 >= BUFFLEN){
+void write_to_comp_buff(char c) {
+	if(compBuf.index + 1 >= BUFFLEN) {
 		compBuf.index = 0;
 	}
 	compBuf.buff[compBuf.index++] = c;
@@ -212,7 +212,111 @@ void error() {
 	state = TRANSPARENT;
 }
 
-int transition(char c, FILE * transformed_mail){
+#define BUFSIZE 1024
+
+char aux[BUFSIZE] = { 0 };
+
+void handle_error(int number) {
+	const char * error_text = "-ERR Connection error\r\n";
+	const char * filePath = get_transformed_mail_file_path(number);
+	// remove(filePath);
+	printf("\n\n\nhola%s\n\n\n\n", filePath);
+  FILE * transformed_mail = fopen(filePath, "w");
+	fwrite(error_text, CHARACTER_SIZE, strlen(error_text), transformed_mail);
+	fclose(transformed_mail);
+}
+
+int mime_parser(char * filter_medias, char * filter_message, char * client_number, size_t index_from_which_to_read_file) {
+	char c;
+	int i = 0;
+	state = HEADER_NAME;
+	read_chars = COMMON;
+
+	char * retrieved_mail_file_path  = get_retrieved_mail_file_path(client_number[0]);
+  char * transformed_mail_file_path = get_transformed_mail_file_path(client_number[0]);
+
+	FILE * retrieved_mail   = fopen(retrieved_mail_file_path, "r");
+	FILE * transformed_mail = fopen(transformed_mail_file_path, "a");
+
+ 	blacklist[0] = NULL;
+ 	// populate_blacklist("text/html,application/*");
+	// substitute_text = "Content was deleted";
+
+
+	if (filter_medias != NULL) populate_blacklist(filter_medias);
+	substitute_text = filter_message;
+
+	actualContent.type = NULL;
+	actualContent.subtype = NULL;
+ 	cType = malloc(sizeof(cTypeStack));
+ 	cType->prev = cType->next = NULL;
+ 	cType->type = NO_CONTENT;
+	cType->boundary = NULL;
+ 	printBuf.index = compBuf.index = 0;
+ 	int number_read;
+ 	int is_comment = 1;
+
+	// Eat first characters which correspond to pop3 +ok/-err stuff
+	fread(aux, CHARACTER_SIZE, index_from_which_to_read_file, retrieved_mail);
+
+	#define READ_COUNT BUFSIZE - 1
+
+  while ((number_read = fread(aux, CHARACTER_SIZE, READ_COUNT, retrieved_mail)) > 0) {
+    for (int index = 0; index < number_read && i < BUFFLEN; index++) {
+   		c = aux[index];
+
+			if(c == '(' && is_comment == 1){
+				is_comment = 0;
+	   	} else if(c == ')' && is_comment == 0) {
+	   		is_comment = 1;
+	   	}
+
+	   	if(!(erasing == ERASING || state == CTYPE_DATA || state == CSUBTYPE_DATA)) {
+	   		write_to_out_buff(c, transformed_mail);
+	   	}
+	   	read_chars = get_current_state_char(c);
+
+	   	if(is_comment == 0) continue;
+
+	   	if(!(LIMIT(c) ||
+			 		 WHITESPACE(c) ||
+					 LIMIT_BOUND(c) ||
+					 read_chars == NEW_LINE) ||
+				 (state == BOUNDARY && !LIMIT_BOUND(c)) ||
+				 (state == CONTENT_DATA && !CRLF_CHAR(c))) {
+
+				if((read_chars != NEW_LINE && read_chars != FOLD) || (state == CONTENT_DATA && read_chars == NEW_LINE)){
+	   			write_to_comp_buff(c);
+	   		}
+
+	   	}
+
+			transition(c, transformed_mail);
+		}
+ 	}
+
+	const char * buffer = printBuf.buff;
+	fwrite(buffer, CHARACTER_SIZE, strlen(buffer), transformed_mail);
+	write(1, printBuf.buff, strlen(printBuf.buff));
+
+	printBuf.index = 0;
+	free_blacklist();
+	free(actualContent.type);
+	free(actualContent.subtype);
+
+
+  fclose(retrieved_mail);
+  fclose(transformed_mail);
+
+	printf("\nstate: %d\n\n", state);
+	if (state == TRANSPARENT) {
+ 		handle_error(client_number[0]);
+	}
+
+ 	return 0;
+}
+
+static int transition(char c, FILE * transformed_mail) {
 	switch(state) {
 		case TRANSPARENT:
 			return 0;
@@ -330,7 +434,6 @@ int transition(char c, FILE * transformed_mail){
 			break;
 		case ATTR_NAME:
 			if(c == '='){
-				//printf("\n%s|%d|\n", compBuf.buff,(int) strlen(compBuf.buff));
 				if(strcicmp(compBuf.buff,"boundary") == 0) {
 					state = BOUNDARY;
 				} else {
@@ -446,93 +549,4 @@ int transition(char c, FILE * transformed_mail){
 			break;
 	}
 	return 0;
-}
-
-#define BUFSIZE 1024
-
-char aux[BUFSIZE] = { 0 };
-
-int mime_parser(char * filter_medias, char * filter_message, char * client_number, size_t index_from_which_to_read_file) {
-	char c;
-	int i = 0;
-	state = HEADER_NAME;
-	read_chars = COMMON;
-
-	char * retrieved_mail_file_path  = get_retrieved_mail_file_path(client_number[0]);
-  char * transformed_mail_file_path = get_transformed_mail_file_path(client_number[0]);
-
-	FILE * retrieved_mail   = fopen(retrieved_mail_file_path, "r");
-	FILE * transformed_mail = fopen(transformed_mail_file_path, "a");
-
- 	blacklist[0] = NULL;
- 	// populate_blacklist("text/html,application/*");
-	// substitute_text = "Content was deleted";
-
-
-	if (filter_medias != NULL) populate_blacklist(filter_medias);
-	substitute_text = filter_message;
-
-	actualContent.type = NULL;
-	actualContent.subtype = NULL;
- 	cType = malloc(sizeof(cTypeStack));
- 	cType->prev = cType->next = NULL;
- 	cType->type = NO_CONTENT;
-	cType->boundary = NULL;
- 	printBuf.index = compBuf.index = 0;
- 	int number_read;
- 	int is_comment = 1;
-
-	// Eat first characters which correspond to pop3 +ok/-err stuff
-	fread(aux, CHARACTER_SIZE, index_from_which_to_read_file, retrieved_mail);
-
-	#define READ_COUNT BUFSIZE - 1
-
-  while ((number_read = fread(aux, CHARACTER_SIZE, READ_COUNT, retrieved_mail)) > 0) {
-    for (int index = 0; index < number_read && i < BUFFLEN; index++) {
-   		c = aux[index];
-
-			if(c == '(' && is_comment == 1){
-				is_comment = 0;
-	   	} else if(c == ')' && is_comment == 0) {
-	   		is_comment = 1;
-	   	}
-
-	   	if(!(erasing == ERASING || state == CTYPE_DATA || state == CSUBTYPE_DATA)) {
-	   		write_to_out_buff(c, transformed_mail);
-	   	}
-	   	read_chars = get_current_state_char(c);
-
-	   	if(is_comment == 0) continue;
-
-	   	if(!(LIMIT(c) ||
-			 		 WHITESPACE(c) ||
-					 LIMIT_BOUND(c) ||
-					 read_chars == NEW_LINE) ||
-				 (state == BOUNDARY && !LIMIT_BOUND(c)) ||
-				 (state == CONTENT_DATA && !CRLF_CHAR(c))) {
-
-				if((read_chars != NEW_LINE && read_chars != FOLD) || (state == CONTENT_DATA && read_chars == NEW_LINE)){
-	   			write_to_comp_buff(c);
-	   		}
-
-	   	}
-
-			transition(c, transformed_mail);
-		}
- 	}
-
-	const char * buffer = printBuf.buff;
-	fwrite(buffer, CHARACTER_SIZE, strlen(buffer), transformed_mail);
-	write(1, printBuf.buff, strlen(printBuf.buff));
-
-	printBuf.index = 0;
-	free_blacklist();
-	free(actualContent.type);
-	free(actualContent.subtype);
-
-
-  fclose(retrieved_mail);
-  fclose(transformed_mail);
-
- 	return 0;
 }
