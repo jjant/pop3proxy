@@ -22,8 +22,8 @@ int main() {
 
   get_env_vars(&filter_medias, &filter_message, &pop3_filter_version, &pop3_server, &pop3_username, &client_number);
 
-  char * retrieved_mail_file_path  = get_retrieved_mail_file_path(client_number[0]);
-  char * transformed_mail_file_path = get_transformed_mail_file_path(client_number[0]);
+  char * retrieved_mail_file_path  = get_retrieved_mail_file_path(client_number);
+  char * transformed_mail_file_path = get_transformed_mail_file_path(client_number);
 
 	FILE * retrieved_mail   = fopen(retrieved_mail_file_path, "r");
 	FILE * transformed_mail = fopen(transformed_mail_file_path, "a");
@@ -41,9 +41,11 @@ int main() {
   }
 
 end:
-  fwrite(buffer, CHARACTER_SIZE, buffer_index+2, transformed_mail);
+  fwrite(buffer, CHARACTER_SIZE, buffer_index + 2, transformed_mail);
 
+  fclose(retrieved_mail);
   fclose(transformed_mail);
-  mime_parser(filter_medias, filter_message, client_number, retrieved_mail);
+  printf("\n\nGOTHERE\n\n\n");
+  mime_parser(filter_medias, filter_message, client_number, buffer_index + 2);
   return 0;
 }
