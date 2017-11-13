@@ -84,21 +84,21 @@ char* copy_to_buffer(char* str) {
 	Verifica si un string es un boundary.
 	De serlo, identifica si es un boundary separador o uno final.
 */
-boundary_type check_boundary(char * str, char * bound) {
+boundary_type check_boundary(char * str, char * boundary) {
 	if(str[0] != 0 && str[1] != 0 && str[0] != '-' && str[1] != '-') {
 		return NOT_BOUNDARY;
 	}
 	str = str + 2;
 	int i=0;
-	for(; str[i] != 0 && bound[i] != 0; i++) {
-		if(str[i] != bound[i]) {
+	for(; str[i] != 0 && boundary[i] != 0; i++) {
+		if(str[i] != boundary[i]) {
 			return NOT_BOUNDARY;
 		}
 	}
-	if(bound[i] == 0 && str[i] != 0 && str[i+1] != 0 && str[i] == '-' && str[i+1] == '-') {
+	if(boundary[i] == 0 && str[i] != 0 && str[i+1] != 0 && str[i] == '-' && str[i+1] == '-') {
 		return FINISH;
 	}
-	if (bound[i] == 0) {
+	if (boundary[i] == 0) {
 		return SEPARATOR;
 	}
 	return NOT_BOUNDARY;
@@ -300,7 +300,6 @@ int mime_parser(char * filter_medias, char * filter_message, char * client_numbe
 
 	const char * buffer = printBuf.buff;
 	fwrite(buffer, CHARACTER_SIZE, strlen(buffer), transformed_mail);
-	write(1, printBuf.buff, strlen(printBuf.buff));
 
 	printBuf.index = 0;
 	free_blacklist();
