@@ -9,7 +9,7 @@
 #include <arpa/inet.h>
 #include <getopt.h>
 
-#define BUFSIZE 128
+#define BUFSIZE 256
 
 //File where metrics are stored
 FILE *fp;
@@ -26,14 +26,19 @@ int main(int argc, char *argv[]) {
     int                  option                     = 0;
     int                  message_multiple_lines     = 0;
     int                  error                      = 0;
-    char                 *proxy_IP                  = argv[1];          // First arg: server IP address (dotted quad)
-    int                  proxy_port                 = atoi(argv[2]);    // Second arg: server port
+    char                 *proxy_IP;
+    int                  proxy_port;
 
 	//Check for correct amount of args.
 	if (argc < 3) { // Test for correct number of arguments
     	printf("Parameters must be <Server Address> <Server Port> and <options...>\n");
         exit(EXIT_FAILURE);
 	}
+    proxy_IP   = argv[1];          // First arg: server IP address (dotted quad)
+    proxy_port  = atoi(argv[2]);    // Second arg: server port
+
+    for( int j = 0; j < BUFSIZE; j++)
+        initial_buffer[j] = '\0';
 
     // Create socket
   	sock = socket(PF_INET, SOCK_STREAM, IPPROTO_SCTP);
@@ -69,8 +74,11 @@ int main(int argc, char *argv[]) {
 
     fp = fopen("metrics.txt", "w");
 
-    while ((option = getopt(argc, argv,"e:hl:L:m:M:o:p:P:t:v123456789")) != -1) {
+    while ((option = getopt(argc, argv,"s:e:hl:L:m:M:o:p:P:t:v123456789")) != -1) {
         switch (option) {
+            case 's' :
+                createMessageToSend("OS ", optarg);
+                break;
             case 'e' :
                 createMessageToSend("EF ", optarg); 
                 break;
@@ -80,6 +88,7 @@ int main(int argc, char *argv[]) {
                 printf("OPTIONS:\n");
                 printf("        -h\n");
                 printf("        -v\n");
+                printf("        -s origin-server\n");
                 printf("        -e archivo-de-error\n");
                 printf("        -l dirección-pop3\n");
                 printf("        -L dirección-de-management\n");

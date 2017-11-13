@@ -1,7 +1,7 @@
 #ifndef PROXY_UTILITIES_H
 #define PROXY_UTILITIES_H
 
-#define BUFSIZE 1024
+#define BUFSIZE 2048
 #define MAXCLIENTS 1024
 
 struct DescriptorsArrays{

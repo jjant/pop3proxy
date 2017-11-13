@@ -79,6 +79,9 @@ void buffer_write_adv(buffer *b, const ssize_t bytes) {
 void buffer_read_adv(buffer *b, const ssize_t bytes) {
     if(bytes > -1) {
         b->read += (size_t) bytes;
+        //test
+        if(b->read > b->write)
+            b->read = b->write;
         assert(b->read <= b->write);
 
         if(b->read == b->write) {

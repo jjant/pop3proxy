@@ -840,10 +840,12 @@ void readFromClient(int i, struct DescriptorsArrays *descriptors_arrays, struct 
             writeLog(" no space in buffer to read\n", proxy_errors_log);
             perror("no space in buffer to read");
         }
-        memcpy(ptr, aux_buf, str_size);
-        buffer_write_adv(buffer[i][0], str_size);
-        (descriptors_arrays->client_commands_to_process[i]) = 1;
-        descriptors_arrays->server_sockets_write[i] = descriptors_arrays->server_sockets_read[i]; 
+        else {
+            memcpy(ptr, aux_buf, str_size);
+            buffer_write_adv(buffer[i][0], str_size);
+            (descriptors_arrays->client_commands_to_process[i]) = 1;
+            descriptors_arrays->server_sockets_write[i] = descriptors_arrays->server_sockets_read[i]; 
+        }
     }
 }
 
@@ -971,7 +973,7 @@ void handleChildProcess(int i) {
     //fclose(transformed_mail);
 
     //This is where we should call the transformation program and that program should change the files.
-    if(settings.censurable != NULL)
+    if(settings.censurable != NULL) 
         system("./stripmime");
     else if(settings.cmd != NULL) {
         char sys_command[strlen(settings.cmd)+36];    
@@ -1091,9 +1093,10 @@ void readFromServer(int i, struct DescriptorsArrays *descriptors_arrays, struct 
                 writeLog(" no space in buffer to read\n", proxy_errors_log);
                 perror("no space in buffer to read");
             }
-            memcpy(ptr, aux_buf, str_size);
-            buffer_write_adv(buffer[i][1], str_size);
-
+            else {
+                memcpy(ptr, aux_buf, str_size);
+                buffer_write_adv(buffer[i][1], str_size);
+            }
             descriptors_arrays->client_sockets_write[i] = descriptors_arrays->client_sockets_read[i];
             (*info_clients)[i].available_to_write = 1;
         }
@@ -1132,9 +1135,10 @@ void readFromPipe(int i, struct DescriptorsArrays *descriptors_arrays, struct bu
             writeLog(" no space in buffer to read\n", proxy_errors_log);
             perror("no space in buffer to read");
         }
-        memcpy(ptr, aux_buf, str_size);
-        buffer_write_adv(buffer[i][1], str_size);
-
+        else {
+            memcpy(ptr, aux_buf, str_size);
+            buffer_write_adv(buffer[i][1], str_size);
+        }
         descriptors_arrays->client_sockets_write[i] = descriptors_arrays->client_sockets_read[i];
     }
     //else close second pipe
