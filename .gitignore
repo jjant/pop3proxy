@@ -1,6 +1,7 @@
 .DS_Store
 
-src/pop3.out
+src/pop3filter
+src/pop3ctl
 src/stripmime
 src/retr_mail_*
 src/resp_mail_*
