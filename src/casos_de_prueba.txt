@@ -1,3 +1,31 @@
-100 - Inmutabilidad
-gcc -o stripmime mime_parser.c parser_utils.c pop3_parser.c -pedantic -std=c99 -Wall -Wextra -Wfloat-equal -Wshadow -Wpointer-arith -Wstrict-prototypes -Wcast-align -Wstrict-overflow=5 -Waggregate-return -Wcast-qual -Wswitch-default -Wswitch-enum -Wunreachable-code -Wno-unused-parameter -Wno-unused-function -Wno-unused-variable -Werror -pedantic-errors
-cp ../mime/mensajes/ii_images.mbox ./retr_mail_0100 && CLIENT_NUM=100 FILTER_MSG="Hola Juan" FILTER_MEDIAS="application/json" ./stripmime && diff retr_mail_0100 resp_mail_0100
+Precondición: Correr el siguiente comando.
+
+export CLIENT_NUM=100 && export FILTER_MEDIAS="images/png" && export FILTER_MSG="Parte reemplazada." && export POP3FILTER_VERSION=0.0 && export POP3_USERNAME=foo && export POP3_SERVER=bar && gcc -o stripmime mime_parser.c parser_utils.c pop3_parser.c -pedantic -std=c99 -Wall -Wextra -Wfloat-equal -Wshadow -Wpointer-arith -Wstrict-prototypes -Wcast-align -Wstrict-overflow=5 -Waggregate-return -Wcast-qual -Wswitch-default -Wswitch-enum -Wunreachable-code -Wno-unused-parameter -Wno-unused-function -Wno-unused-variable -Werror -pedantic-errors
+
+100 - Inmutabilidad.
+
+cp ../mime/mensajes/ii_images.mbox ./retr_mail_0100 && unix2dos ./retr_mail_0100 && FILTER_MEDIAS="application/json" ./stripmime && diff retr_mail_0100 resp_mail_0100
+
+101 - Standalone: Simple PNG.
+
+cp ../mime/mensajes/ii_images.mbox ./retr_mail_0100 && unix2dos ./retr_mail_0100 && FILTER_MEDIAS="image/png" ./stripmime; diff retr_mail_0100 resp_mail_0100
+
+102 - Standalone: PNG y JPEG, lista.
+
+cp ../mime/mensajes/ii_images.mbox ./retr_mail_0100 && unix2dos ./retr_mail_0100 && FILTER_MEDIAS="image/png,image/jpeg" ./stripmime && vim resp_mail_0100
+
+103 - Standalone: PNG y JPEG: wildcard.
+
+cp ../mime/mensajes/ii_images.mbox ./retr_mail_0100 && unix2dos ./retr_mail_0100 && FILTER_MEDIAS="image/*" ./stripmime && vim resp_mail_0100
+
+104 - Anidado PNG y JPEG: wildcard.
+
+cp ../mime/mensajes/iii_images_fwd.mbox ./retr_mail_0100 && unix2dos ./retr_mail_0100 && FILTER_MEDIAS="image/*" ./stripmime && vim resp_mail_0100
+
+105 - Correo grande: Inmutabilidad
+
+cp ../mime/mensajes/i_big.mbox ./retr_mail_0100 && unix2dos ./retr_mail_0100 && FILTER_MEDIAS="application/json" ./stripmime; diff retr_mail_0100 resp_mail_0100
+
+106 - Correo grande: Mutabilidad
+
+cp ../mime/mensajes/i_big.mbox ./retr_mail_0100 && unix2dos ./retr_mail_0100 && FILTER_MSG="Aqui estaba el archivo" FILTER_MEDIAS=application/x-cd-image ./stripmime
