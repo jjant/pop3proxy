@@ -19,8 +19,8 @@ void free_blacklist(cTypeNSubType * blacklist[]) {
 
 int is_in_blacklist(cTypeNSubType * blacklist[], cTypeNSubType* content, Buffer comparison_buffer) {
 	for(int k = 0; blacklist[k] != NULL; k++) {
-   		if(strcicmp(content->type, blacklist[k]->type, comparison_buffer) == 0){
-   			if(blacklist[k]->subtype[0] == '*' || strcicmp(content->subtype, blacklist[k]->subtype, comparison_buffer) == 0){
+   		if(strcicmp(content->type, blacklist[k]->type, &comparison_buffer) == 0){
+   			if(blacklist[k]->subtype[0] == '*' || strcicmp(content->subtype, blacklist[k]->subtype, &comparison_buffer) == 0){
    				return 0;
    			}
    		}

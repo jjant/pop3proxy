@@ -41,7 +41,6 @@ int main() {
   while ((number_read = fread(buffer, CHARACTER_SIZE, READ_COUNT, retrieved_mail)) > 0) {
     while (buffer[buffer_index] != '\0') {
       if (buffer[buffer_index] == '\r' && buffer[buffer_index + 1] == '\n') {
-        printf("Hasta aca llegue\n");
         goto end;
       }
       buffer_index++;
