@@ -1,9 +1,26 @@
-all:
+CFLAGS=-pedantic -std=c99 -Wall -Wextra -Wfloat-equal -Wshadow -Wpointer-arith -Wstrict-prototypes -Wcast-align -Wstrict-overflow=5 -Waggregate-return -Wcast-qual -Wswitch-default -Wswitch-enum -Wunreachable-code -Wno-unused-parameter -Wno-unused-function -Wno-unused-variable -Werror -pedantic-errors
+CC=gcc
 
-	gcc -o pop3filter proxy.c proxyUtilities.c parsers.c buffer.c -pthread
-	gcc -o pop3ctl confClient.c
-	gcc -o testT testT.c
-	gcc -o stripmime pop3_parser.c parser_utils.c mime_parser.c
+POP3_FILTER_OUT=pop3filter
+POP3_FILTER_SOURCES=proxy.c proxyUtilities.c parsers.c buffer.c
+POP3_FILTER_FLAGS=-pthread
+
+POP3_CLIENT_OUT=pop3ctl
+POP3_CLIENT_SOURCES=confClient.c
+
+STRIP_MIME_OUT=stripmime
+STRIP_MIME_SOURCES=pop3_parser.c parser_utils.c mime_parser.c
+
+all: $(STRIP_MIME_OUT) $(POP3_FILTER_OUT) $(POP3_CLIENT_OUT)
+
+$(STRIP_MIME_OUT):
+	$(CC) $(CFLAGS) -o $(STRIP_MIME_OUT) $(STRIP_MIME_SOURCES)
+
+$(POP3_FILTER_OUT):
+	$(CC) $(CFLAGS) -o $(POP3_FILTER_OUT) $(POP3_FILTER_SOURCES) $(POP3FLAGS)
+
+$(POP3_CLIENT_OUT):
+	$(CC) $(CFLAGS) -o $(POP3_CLIENT_OUT) $(POP3_CLIENT_SOURCES)
 
 clean:
 	rm pop3filter pop3ctl stripmime proxy_log.txt proxy_errors_log.txt testT
