@@ -84,7 +84,7 @@ char* copy_to_buffer(char* str) {
 	Verifica si un string es un boundary.
 	De serlo, identifica si es un boundary separador o uno final.
 */
-boundary_type check_boundary(char* str, char* bound) {
+boundary_type check_boundary(char * str, char * bound) {
 	if(str[0] != 0 && str[1] != 0 && str[0] != '-' && str[1] != '-') {
 		return NOT_BOUNDARY;
 	}
@@ -216,10 +216,15 @@ void error() {
 
 char aux[BUFSIZE] = { 0 };
 
-void handle_error(char * number) {
+static bool is_email_invalid() {
+	return cType != NULL && (cType->type != DISCRETE || cType->prev != NULL);
+}
+
+static void handle_error(char * number) {
 	const char * error_text = "-ERR Connection error or malformed mail\r\n";
-	const char * filePath = get_transformed_mail_file_path(number);
-  FILE * transformed_mail = fopen(filePath, "w");
+	const char * file_path = get_transformed_mail_file_path(number);
+	remove(file_path);
+  FILE * transformed_mail = fopen(file_path, "w");
 	fwrite(error_text, CHARACTER_SIZE, strlen(error_text), transformed_mail);
 	fclose(transformed_mail);
 }
@@ -306,8 +311,8 @@ int mime_parser(char * filter_medias, char * filter_message, char * client_numbe
   fclose(retrieved_mail);
   fclose(transformed_mail);
 
-	if (state == TRANSPARENT) {
- 		handle_error(client_number);
+	if (is_email_invalid()) {
+		handle_error(client_number);
 	}
 
  	return 0;
@@ -350,9 +355,13 @@ static int transition(char c, FILE * transformed_mail) {
 			}
 			if (read_chars == CRLFCRLF) {
 				read_chars = COMMON;
-		   		state = CONTENT_DATA;
 		   		compBuf.index = 0;
     			compBuf.buff[0] = 0;
+					if (strcicmp(actualContent.type,"message") == 0){
+						state = HEADER_NAME;
+					} else {
+						state = CONTENT_DATA;
+					}
 		   		return 0;
 			}
 			break;
@@ -416,16 +425,21 @@ static int transition(char c, FILE * transformed_mail) {
 					compBuf.index = 0;
 	    			compBuf.buff[0] = 0;
 					write_str_to_out_bufff("\r\n", transformed_mail);
+					write_to_out_buff(c, transformed_mail);
 					write_to_comp_buff(c);
 					return transition(c, transformed_mail);
 				}
 				if (read_chars == CRLFCRLF) {
 					read_chars = COMMON;
-			   		state = CONTENT_DATA;
-			   		write_str_to_out_bufff("\r\n\r\n", transformed_mail);
-			   		compBuf.index = 0;
-	    			compBuf.buff[0] = 0;
-			   		return 0;
+		   		write_str_to_out_bufff("\r\n\r\n", transformed_mail);
+		   		compBuf.index = 0;
+    			compBuf.buff[0] = 0;
+					if (strcicmp(actualContent.type,"message") == 0){
+						state = HEADER_NAME;
+					} else {
+						state = CONTENT_DATA;
+					}
+		   		return 0;
 				}
 			}
 			break;
@@ -460,10 +474,14 @@ static int transition(char c, FILE * transformed_mail) {
 			}
 			if (read_chars == CRLFCRLF) {
 				read_chars = COMMON;
-		   		state = CONTENT_DATA;
-		   		compBuf.index = 0;
-    			compBuf.buff[0] = 0;
-		   		return 0;
+	   		compBuf.index = 0;
+  			compBuf.buff[0] = 0;
+				if (strcicmp(actualContent.type,"message") == 0){
+  				state = HEADER_NAME;
+  			} else {
+  				state = CONTENT_DATA;
+  			}
+	   		return 0;
 			}
 			break;
 		case BOUNDARY:
@@ -489,10 +507,14 @@ static int transition(char c, FILE * transformed_mail) {
 				}
 				if (read_chars == CRLFCRLF) {
 					read_chars = COMMON;
-			   		state = CONTENT_DATA;
-			   		compBuf.index = 0;
-	    			compBuf.buff[0] = 0;
-			   		return 0;
+		   		compBuf.index = 0;
+    			compBuf.buff[0] = 0;
+					if (strcicmp(actualContent.type,"message") == 0){
+						state = HEADER_NAME;
+					} else {
+						state = CONTENT_DATA;
+					}
+		   		return 0;
 				}
 			}
 			break;

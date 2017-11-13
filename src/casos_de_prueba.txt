@@ -1,0 +1,3 @@
+100 - Inmutabilidad
+gcc -o stripmime mime_parser.c parser_utils.c pop3_parser.c -pedantic -std=c99 -Wall -Wextra -Wfloat-equal -Wshadow -Wpointer-arith -Wstrict-prototypes -Wcast-align -Wstrict-overflow=5 -Waggregate-return -Wcast-qual -Wswitch-default -Wswitch-enum -Wunreachable-code -Wno-unused-parameter -Wno-unused-function -Wno-unused-variable -Werror -pedantic-errors
+cp ../mime/mensajes/ii_images.mbox ./retr_mail_0100 && CLIENT_NUM=100; FILTER_MSG="Hola Juan"; FILTER_MEDIAS="application/json" ./stripmime

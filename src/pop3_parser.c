@@ -25,8 +25,10 @@ int main() {
   char * retrieved_mail_file_path  = get_retrieved_mail_file_path(client_number);
   char * transformed_mail_file_path = get_transformed_mail_file_path(client_number);
 
+  remove(transformed_mail_file_path);
+
 	FILE * retrieved_mail   = fopen(retrieved_mail_file_path, "r");
-	FILE * transformed_mail = fopen(transformed_mail_file_path, "a");
+	FILE * transformed_mail = fopen(transformed_mail_file_path, "w");
 
   int number_read = 0;
   int buffer_index = 0;
