@@ -6,22 +6,14 @@
 #include <stdbool.h>
 #include "parser_utils.h"
 #include "mime_parser.h"
-
-#define CHARACTER_SIZE 1
-
-#define BUFSIZE 1024
-#define BUFFLEN 10000
-
-static int transition(char c, FILE * transformed_mail);
-
-typedef struct Buffer{
-	char buff[BUFFLEN];
-	int index;
-} Buffer;
+#include "buffer_utils.h"
+#include "shared.h"
+#include "blacklist.h"
+#include "parser_types.h"
+#include "boundary_utils.h"
 
 Buffer printBuf;
 Buffer compBuf;
-
 char buff[BUFFLEN];
 char bound[BUFFLEN];
 char stdinBuf[BUFFLEN];
@@ -31,162 +23,13 @@ cTypeStack* cType;
 cTypeNSubType* blacklist[100];
 cTypeNSubType actualContent;
 char* substitute_text;
-int erasing = 0;
+int erasing;
 
-#define LIMIT(c) ((c) == ':' || (c) == ';' || (c) == 0 || (c) == '=' || (c) == '/' || (c) == ',')
-#define LIMIT_BOUND(c) ((c) == '"' || (c) == 0 || (c) == '\r' || (c) == '\n')
-#define WHITESPACE(c) ((c) == ' ' || (c) == '	')
-#define CRLF_CHAR(c) ((c) == '\n' || (c) == '\r')
+static int transition(char c, FILE * transformed_mail);
+static void error();
+static char_types get_current_state_char(char c);
 
-void free_blacklist() {
-	for(int k = 0; blacklist[k] != NULL; k++) {
-		free(blacklist[k]->type);
-		free(blacklist[k]->subtype);
-   		free(blacklist[k]);
-   	}
-}
-
-/*
-	Case insensitive string compare
-*/
-int strcicmp(char *a, char const *b) {
-	int ans = 0;
-    for (;; a++, b++) {
-        int d = tolower(*a) - tolower(*b);
-        if (d != 0 || !*a){
-            ans = d;
-            break;
-        }
-    }
-    compBuf.index = 0;
-    compBuf.buff[0] = 0;
-    return ans;
-}
-
-/*
-	El buffer "buff" es donde se copian los fragmentos de strings para su posterior analisis.
-	Los strings se fragmentan segun los delimitadores ':', ';', '=' y '/'.
-*/
-char* copy_to_buffer(char* str) {
-	int i = 0;
-	while(i < BUFFLEN) {
-		if(LIMIT(str[0])) {
-			buff[i] = 0;
-			return str;
-		}
-		buff[i++] = str[0];
-		str++;
-	}
-	return str;
-}
-
-/*
-	Verifica si un string es un boundary.
-	De serlo, identifica si es un boundary separador o uno final.
-*/
-boundary_type check_boundary(char * str, char * boundary) {
-	if(str[0] != 0 && str[1] != 0 && str[0] != '-' && str[1] != '-') {
-		return NOT_BOUNDARY;
-	}
-	str = str + 2;
-	int i=0;
-	for(; str[i] != 0 && boundary[i] != 0; i++) {
-		if(str[i] != boundary[i]) {
-			return NOT_BOUNDARY;
-		}
-	}
-	if(boundary[i] == 0 && str[i] != 0 && str[i+1] != 0 && str[i] == '-' && str[i+1] == '-') {
-		return FINISH;
-	}
-	if (boundary[i] == 0) {
-		return SEPARATOR;
-	}
-	return NOT_BOUNDARY;
-}
-
-static char * allocate_for_string(char * str) {
-	return (char*)malloc((strlen(str) + 1) * sizeof(char));
-}
-
-static cTypeNSubType * create_blacklist_element(char * type, bool isSubtype) {
-	cTypeNSubType * const blacklist_element = malloc(sizeof(cTypeNSubType));
-
-	if (isSubtype) {
-		blacklist_element->subtype = allocate_for_string(type);
-		strcpy(blacklist_element->subtype, type);
-	} else {
-		blacklist_element->type = allocate_for_string(type);
-		strcpy(blacklist_element->type, type);
-	}
-
-	return blacklist_element;
-}
-
-
-/*
-	Crea una lista con todos los Content Types que debe censurar.
-*/
-void populate_blacklist(char* items) {
-	int i = 0;
-
-	while(items[0] != '\0') {
-		items = copy_to_buffer(items);
-
-		if(items[0] == '/') {
-			blacklist[i] = create_blacklist_element(buff, false);
-			items++;
-		} else {
-			blacklist[i]->subtype = (char*)malloc((strlen(buff) + 1) * sizeof(char));
-			strcpy(blacklist[i]->subtype, buff);
-			if(items[0] == ',') {
-				items++;
-			}
-			i++;
-		}
-	}
-
-	blacklist[i] = NULL;
-}
-
-/*
-	Verifica si un contenido dado debe ser censurado o no.
-*/
-int is_in_blacklist(cTypeNSubType* content) {
-	for(int k = 0; blacklist[k] != NULL; k++) {
-   		if(strcicmp(content->type, blacklist[k]->type) == 0){
-   			if(blacklist[k]->subtype[0] == '*' || strcicmp(content->subtype, blacklist[k]->subtype) == 0){
-   				return 0;
-   			}
-   		}
-   	}
-   	return 1;
-}
-
-void write_to_out_buff(char c, FILE * transformed_mail) {
-	if(printBuf.index + 1 >= BUFFLEN){
-		const char * buffer = printBuf.buff;
-		fwrite(buffer, CHARACTER_SIZE, strlen(buffer), transformed_mail);
-		printBuf.index = 0;
-	}
-	printBuf.buff[printBuf.index++] = c;
-	printBuf.buff[printBuf.index] = 0;
-}
-
-void write_str_to_out_bufff(char* str, FILE * transformed_mail) {
-	for(size_t i=0; i < strlen(str); i++) {
-		write_to_out_buff(str[i], transformed_mail);
-	}
-}
-
-void write_to_comp_buff(char c) {
-	if(compBuf.index + 1 >= BUFFLEN) {
-		compBuf.index = 0;
-	}
-	compBuf.buff[compBuf.index++] = c;
-	compBuf.buff[compBuf.index] = 0;
-}
-
-char_types get_current_state_char(char c){
+static char_types get_current_state_char(char c) {
 	if((read_chars == COMMON || read_chars == FOLD) && c == '\r'){
 		return CR;
 	}
@@ -208,7 +51,7 @@ char_types get_current_state_char(char c){
 	return COMMON;
 }
 
-void error() {
+static void error() {
 	state = TRANSPARENT;
 }
 
@@ -246,7 +89,7 @@ int mime_parser(char * filter_medias, char * filter_message, char * client_numbe
 	// substitute_text = "Content was deleted";
 
 
-	if (filter_medias != NULL) populate_blacklist(filter_medias);
+	if (filter_medias != NULL) populate_blacklist(blacklist, filter_medias, buff);
 	substitute_text = filter_message;
 
 	actualContent.type = NULL;
@@ -275,7 +118,7 @@ int mime_parser(char * filter_medias, char * filter_message, char * client_numbe
 	   	}
 
 	   	if(!(erasing == ERASING || state == CTYPE_DATA || state == CSUBTYPE_DATA)) {
-	   		write_to_out_buff(c, transformed_mail);
+	   		write_to_out_buff(c, printBuf, transformed_mail);
 	   	}
 	   	read_chars = get_current_state_char(c);
 
@@ -289,7 +132,7 @@ int mime_parser(char * filter_medias, char * filter_message, char * client_numbe
 				 (state == CONTENT_DATA && !CRLF_CHAR(c))) {
 
 				if((read_chars != NEW_LINE && read_chars != FOLD) || (state == CONTENT_DATA && read_chars == NEW_LINE)){
-	   			write_to_comp_buff(c);
+	   			write_to_comp_buff(c, compBuf);
 	   		}
 
 	   	}
@@ -302,7 +145,7 @@ int mime_parser(char * filter_medias, char * filter_message, char * client_numbe
 	fwrite(buffer, CHARACTER_SIZE, strlen(buffer), transformed_mail);
 
 	printBuf.index = 0;
-	free_blacklist();
+	free_blacklist(blacklist);
 	free(actualContent.type);
 	free(actualContent.subtype);
 
@@ -324,7 +167,7 @@ static int transition(char c, FILE * transformed_mail) {
 		case HEADER_NAME:
 			if(c == ':'){
 				//printf("\nKAKAKA=%s\n", compBuf.buff);
-		   		if(strcicmp(compBuf.buff, "Content-Type") == 0) {
+		   		if(strcicmp(compBuf.buff, "Content-Type", compBuf) == 0) {
 					state = CTYPE_DATA;
 				} else {
 					state = HEADER_DATA;
@@ -349,14 +192,14 @@ static int transition(char c, FILE * transformed_mail) {
 				state = HEADER_NAME;
 				compBuf.index = 0;
     			compBuf.buff[0] = 0;
-    			write_to_comp_buff(c);
+    			write_to_comp_buff(c, compBuf);
 				return transition(c, transformed_mail);
 			}
 			if (read_chars == CRLFCRLF) {
 				read_chars = COMMON;
 		   		compBuf.index = 0;
     			compBuf.buff[0] = 0;
-					if (strcicmp(actualContent.type,"message") == 0){
+					if (strcicmp(actualContent.type,"message", compBuf) == 0){
 						state = HEADER_NAME;
 					} else {
 						state = CONTENT_DATA;
@@ -388,16 +231,16 @@ static int transition(char c, FILE * transformed_mail) {
 				}
 				actualContent.subtype = (char*)malloc((strlen(compBuf.buff) + 1) * sizeof(char));
 				strcpy(actualContent.subtype, compBuf.buff);
-				if(is_in_blacklist(&actualContent) == 0) {
-					write_str_to_out_bufff(" text/plain\r\n\r\n", transformed_mail);
-					write_str_to_out_bufff(substitute_text, transformed_mail);
-					write_str_to_out_bufff("\r\n", transformed_mail);
+				if(is_in_blacklist(blacklist, &actualContent, compBuf) == 0) {
+					write_str_to_out_buff(" text/plain\r\n\r\n", printBuf, transformed_mail);
+					write_str_to_out_buff(substitute_text, printBuf, transformed_mail);
+					write_str_to_out_buff("\r\n", printBuf, transformed_mail);
 					cType->type = DISCRETE;
 					erasing = ERASING;
 					state = CONTENT_DATA;
 					return 0;
 				}
-				if(strcicmp(actualContent.type,"multipart") == 0) {
+				if(strcicmp(actualContent.type,"multipart", compBuf) == 0) {
 					cType->type = COMPOSITE;
 					cType->next = malloc(sizeof(*(cType->next)));
 					cType->next->prev = cType;
@@ -407,15 +250,15 @@ static int transition(char c, FILE * transformed_mail) {
 				} else {
 					cType->type = DISCRETE;
 				}
-				write_str_to_out_bufff(actualContent.type, transformed_mail);
-				write_str_to_out_bufff("/", transformed_mail);
-				write_str_to_out_bufff(actualContent.subtype, transformed_mail);
+				write_str_to_out_buff(actualContent.type, printBuf, transformed_mail);
+				write_str_to_out_buff("/", printBuf, transformed_mail);
+				write_str_to_out_buff(actualContent.subtype, printBuf, transformed_mail);
 
 				if(c == ';') {
 					state = ATTR_NAME;
 					compBuf.index = 0;
 	    			compBuf.buff[0] = 0;
-					write_str_to_out_bufff(";", transformed_mail);
+					write_str_to_out_buff(";", printBuf, transformed_mail);
 					return 0;
 				}
 				if(read_chars == NEW_LINE){
@@ -423,17 +266,17 @@ static int transition(char c, FILE * transformed_mail) {
 					state = HEADER_NAME;
 					compBuf.index = 0;
 	    			compBuf.buff[0] = 0;
-					write_str_to_out_bufff("\r\n", transformed_mail);
-					write_to_out_buff(c, transformed_mail);
-					write_to_comp_buff(c);
+					write_str_to_out_buff("\r\n", printBuf, transformed_mail);
+					write_to_out_buff(c, printBuf, transformed_mail);
+					write_to_comp_buff(c, compBuf);
 					return transition(c, transformed_mail);
 				}
 				if (read_chars == CRLFCRLF) {
 					read_chars = COMMON;
-		   		write_str_to_out_bufff("\r\n\r\n", transformed_mail);
+		   		write_str_to_out_buff("\r\n\r\n", printBuf, transformed_mail);
 		   		compBuf.index = 0;
     			compBuf.buff[0] = 0;
-					if (strcicmp(actualContent.type,"message") == 0){
+					if (strcicmp(actualContent.type,"message", compBuf) == 0){
 						state = HEADER_NAME;
 					} else {
 						state = CONTENT_DATA;
@@ -444,7 +287,7 @@ static int transition(char c, FILE * transformed_mail) {
 			break;
 		case ATTR_NAME:
 			if(c == '='){
-				if(strcicmp(compBuf.buff,"boundary") == 0) {
+				if(strcicmp(compBuf.buff,"boundary", compBuf) == 0) {
 					state = BOUNDARY;
 				} else {
 					state = ATTR_DATA;
@@ -468,14 +311,14 @@ static int transition(char c, FILE * transformed_mail) {
 				state = HEADER_NAME;
 				compBuf.index = 0;
 	    		compBuf.buff[0] = 0;
-				write_to_comp_buff(c);
+				write_to_comp_buff(c, compBuf);
 				return transition(c, transformed_mail);
 			}
 			if (read_chars == CRLFCRLF) {
 				read_chars = COMMON;
 	   		compBuf.index = 0;
   			compBuf.buff[0] = 0;
-				if (strcicmp(actualContent.type,"message") == 0){
+				if (strcicmp(actualContent.type,"message", compBuf) == 0){
   				state = HEADER_NAME;
   			} else {
   				state = CONTENT_DATA;
@@ -501,14 +344,14 @@ static int transition(char c, FILE * transformed_mail) {
 					state = HEADER_NAME;
 					compBuf.index = 0;
 	    			compBuf.buff[0] = 0;
-					write_to_comp_buff(c);
+					write_to_comp_buff(c, compBuf);
 					return transition(c, transformed_mail);
 				}
 				if (read_chars == CRLFCRLF) {
 					read_chars = COMMON;
 		   		compBuf.index = 0;
     			compBuf.buff[0] = 0;
-					if (strcicmp(actualContent.type,"message") == 0){
+					if (strcicmp(actualContent.type,"message", compBuf) == 0){
 						state = HEADER_NAME;
 					} else {
 						state = CONTENT_DATA;
@@ -521,8 +364,8 @@ static int transition(char c, FILE * transformed_mail) {
 			if(read_chars == CRLF || read_chars == CRLFCRLF) {
 				if(cType->type == COMPOSITE && check_boundary(compBuf.buff, cType->boundary) == SEPARATOR) {
 					if(erasing == ERASING){
-						write_str_to_out_bufff("--", transformed_mail);
-						write_str_to_out_bufff(cType->boundary, transformed_mail);
+						write_str_to_out_buff("--", printBuf, transformed_mail);
+						write_str_to_out_buff(cType->boundary, printBuf, transformed_mail);
 					}
 					cType = cType->next;
 					cType->boundary = NULL;
@@ -532,17 +375,17 @@ static int transition(char c, FILE * transformed_mail) {
 					boundary_type checked_bound = check_boundary(compBuf.buff, cType->prev->boundary);
 					if(checked_bound == SEPARATOR){
 						if(erasing == ERASING){
-							write_str_to_out_bufff("--", transformed_mail);
-							write_str_to_out_bufff(cType->prev->boundary, transformed_mail);
-							write_str_to_out_bufff("\r\n", transformed_mail);
+							write_str_to_out_buff("--", printBuf, transformed_mail);
+							write_str_to_out_buff(cType->prev->boundary, printBuf, transformed_mail);
+							write_str_to_out_buff("\r\n", printBuf, transformed_mail);
 						}
 						state = HEADER_NAME;
 						erasing = NOT_ERASING;
 					} else if(checked_bound == FINISH) {
 						if(erasing == ERASING){
-							write_str_to_out_bufff("--", transformed_mail);
-							write_str_to_out_bufff(cType->prev->boundary, transformed_mail);
-							write_str_to_out_bufff("--\r\n", transformed_mail);
+							write_str_to_out_buff("--", printBuf, transformed_mail);
+							write_str_to_out_buff(cType->prev->boundary, printBuf, transformed_mail);
+							write_str_to_out_buff("--\r\n", printBuf, transformed_mail);
 						}
 						free(cType->prev->boundary);
 						cType->prev->boundary = NULL;

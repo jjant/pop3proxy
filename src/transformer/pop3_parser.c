@@ -22,6 +22,11 @@ int main() {
 
   get_env_vars(&filter_medias, &filter_message, &pop3_filter_version, &pop3_server, &pop3_username, &client_number);
 
+  // if(getenv("DEBUG_MIME")) {
+    // print_env_vars(filter_medias, filter_message, pop3_filter_version, pop3_server, pop3_username, client_number);
+  // }
+
+
   char * retrieved_mail_file_path  = get_retrieved_mail_file_path(client_number);
   char * transformed_mail_file_path = get_transformed_mail_file_path(client_number);
 
@@ -36,7 +41,8 @@ int main() {
   while ((number_read = fread(buffer, CHARACTER_SIZE, READ_COUNT, retrieved_mail)) > 0) {
     while (buffer[buffer_index] != '\0') {
       if (buffer[buffer_index] == '\r' && buffer[buffer_index + 1] == '\n') {
-          goto end;
+        printf("Hasta aca llegue\n");
+        goto end;
       }
       buffer_index++;
     }

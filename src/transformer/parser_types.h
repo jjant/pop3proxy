@@ -1,8 +1,12 @@
-#ifndef MIME_PARSER_H
-#define MIME_PARSER_H
+#ifndef PARSER_TYPES_H
+#define PARSER_TYPES_H
 
-#include <stdlib.h>
-#include <stdio.h>
+#define BUFFLEN 10000
+
+typedef struct Buffer{
+	char buff[BUFFLEN];
+	int index;
+} Buffer;
 
 typedef enum {
   HEADER_NAME = 0,
@@ -54,11 +58,5 @@ typedef struct cTypeNSubType{
 	char* type;
 	char* subtype;
 } cTypeNSubType;
-
-// TODO: Documentar
-int is_in_blacklist(cTypeNSubType* content);
-
-// TODO: documentar
-int mime_parser(char * filter_medias, char * filter_message, char * client_number, size_t index_from_which_to_read_file);
 
 #endif
