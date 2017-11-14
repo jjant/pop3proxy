@@ -9,7 +9,6 @@
 #include "buffer_utils.h"
 
 static content_type_and_subtype * create_filter_list_element(char * type, char * subtype);
-static char * allocate_for_string(char * str);
 static bool is_type_equal(char * type1, char * type2);
 static bool is_subtype_equal(char * subtype1, char * subtype2);
 static bool is_subtype_wildcard(char * subtype);
@@ -61,10 +60,6 @@ static content_type_and_subtype * create_filter_list_element(char * type, char *
 	return filter_list_element;
 }
 
-static char * allocate_for_string(char * str) {
-	return (char *)malloc((strlen(str) + 1) * sizeof(char));
-}
-
 static char * get_type(char * token, char ** save_ptr) {
 	char * type = strtok_r(token, "/", save_ptr);
 
@@ -77,7 +72,7 @@ static char * get_subtype(char ** save_ptr) {
 	return subtype;
 }
 
-void populate_filter_list(content_type_and_subtype * filter_list[], char * items) {
+void initialize_filter_list(content_type_and_subtype * filter_list[], char * items) {
 	int i = 0;
 	char * save_ptr1;
 	char * token;

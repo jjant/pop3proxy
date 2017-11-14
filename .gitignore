@@ -5,3 +5,4 @@ src/pop3ctl
 src/stripmime
 src/retr_mail_*
 src/resp_mail_*
+shock.txt

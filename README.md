@@ -5,7 +5,7 @@
 ### Indice de documentos
 
 - `Informe.pdf`: El informe del proyecto se encuentra en el archivo
-- `Presentación-proxy-pop3.pdf`: Presentación utilizada como soporte
+- `Presentacion-proxy-pop3.pdf`: Presentación utilizada como soporte
 - `src/`: Directorio que contiene todos los archivos fuente.
 - `mime/`: Directorio que contiene distintos archivos de prueba para el transformador de mensajes.
 
@@ -75,19 +75,19 @@ cp ../mime/mensajes/ii_images.mbox ./retr_mail_0100 && unix2dos ./retr_mail_0100
 -102 - Standalone: PNG y JPEG, lista.
 
 ```
-cp ../mime/mensajes/ii_images.mbox ./retr_mail_0100 && unix2dos ./retr_mail_0100 && FILTER_MEDIAS="image/png,image/jpeg" ./stripmime && vim resp_mail_0100
+cp ../mime/mensajes/ii_images.mbox ./retr_mail_0100 && unix2dos ./retr_mail_0100 && FILTER_MEDIAS="image/png,image/jpeg" ./stripmime; atom retr_mail_0100 resp_mail_0100
 ```
 
 - 103 - Standalone: PNG y JPEG: wildcard.
 
 ```
-cp ../mime/mensajes/ii_images.mbox ./retr_mail_0100 && unix2dos ./retr_mail_0100 && FILTER_MEDIAS="image/*" ./stripmime && vim resp_mail_0100
+cp ../mime/mensajes/ii_images.mbox ./retr_mail_0100 && unix2dos ./retr_mail_0100 && FILTER_MEDIAS="image/*" ./stripmime ; atom retr_mail_0100 resp_mail_0100
 ```
 
 - 104 - Anidado PNG y JPEG: wildcard.
 
 ```
-cp ../mime/mensajes/iii_images_fwd.mbox ./retr_mail_0100 && unix2dos ./retr_mail_0100 && FILTER_MEDIAS="image/*" ./stripmime && vim resp_mail_0100
+cp ../mime/mensajes/iii_images_fwd.mbox ./retr_mail_0100 && unix2dos ./retr_mail_0100 && FILTER_MEDIAS="image/*" ./stripmime; atom retr_mail_0100 resp_mail_0100
 ```
 
 - 105 - Correo grande: Inmutabilidad
