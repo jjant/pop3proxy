@@ -23,7 +23,7 @@ static state_type state;
 static character_token_type character_token;
 static buffer_type output_buffer;
 
-static void initialize_global_variables();
+static void initialize_global_variables(char *, char*);
 
 int state_transition(char c, FILE * transformed_mail);
 
