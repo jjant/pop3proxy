@@ -9,7 +9,7 @@ POP3_CLIENT_OUT=pop3ctl
 POP3_CLIENT_SOURCES=confClient.c
 
 STRIP_MIME_OUT=stripmime
-STRIP_MIME_SOURCES=transformer/pop3_parser.c transformer/parser_utils.c transformer/mime_parser.c transformer/filter_list.c transformer/buffer_utils.c transformer/boundary_utils.c transformer/validations.c transformer/mime_state_machine.c
+STRIP_MIME_SOURCES=transformer/pop3_parser.c transformer/parser_utils.c transformer/mime_parser.c transformer/filter_list.c transformer/buffer_utils.c transformer/boundary_utils.c transformer/validations.c transformer/mime_state_machine.c transformer/debug.c
 
 all: $(STRIP_MIME_OUT) $(POP3_FILTER_OUT) $(POP3_CLIENT_OUT)
 

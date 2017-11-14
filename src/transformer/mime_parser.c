@@ -13,6 +13,7 @@
 #include "boundary_utils.h"
 #include "validations.h"
 #include "mime_state_machine.h"
+#include "debug.h"
 
 #define BUFSIZE 1024
 
