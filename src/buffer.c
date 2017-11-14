@@ -44,7 +44,7 @@ char * buffer_read_ptr(buffer *b, size_t *nbyte) {
     for(int i = 0; aux_ptr <= b->write && *aux_ptr!='\0'; aux_ptr++){
         comm_end++;
     }
-    if(comm_end < b->write - b->read){
+    if(comm_end < (size_t)(b->write - b->read)) {
         *nbyte = comm_end;
     }
     else {
@@ -58,7 +58,7 @@ char * buffer_read_ptr_for_client(buffer *b, size_t *nbyte){
     //check if end of command appears ('\0') and read until that
     size_t comm_end = 0;
     char *aux_ptr = b->read;
-    for(int i = 0; aux_ptr < b->write && *aux_ptr!='\n'; aux_ptr++){
+    for( ; aux_ptr < b->write && *aux_ptr!='\n'; aux_ptr++){
         comm_end++;
     }
     //Agrego el \n si hay un comando completo

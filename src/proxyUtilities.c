@@ -1,3 +1,5 @@
+#define _GNU_SOURCE 1
+
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
@@ -29,7 +31,9 @@ extern FILE             *retrieved_mail;
 extern FILE             *transformed_mail;
 extern int              **pipes_fd;
 
-void setNullPointers(struct DescriptorsArrays* descriptors_arrays, int **conf_sockets_array, struct buffer ****buffers, struct InfoClient** info_clients) {
+void setNullPointers(struct DescriptorsArrays* descriptors_arrays, 
+                        int **conf_sockets_array, struct buffer ****buffers, 
+                        struct InfoClient** info_clients) {
     descriptors_arrays->client_sockets_read          = NULL;
     descriptors_arrays->client_sockets_write         = NULL;
     descriptors_arrays->server_sockets_read          = NULL;
@@ -55,7 +59,8 @@ void setDefaultMetrics() {
 void setDefaultSettings() {
     settings.origin_server = "127.0.0.1";
     settings.error_file = "/dev/null";
-    settings.pop3_address = NULL;                                 //All addresses for default
+    //All addresses for default
+    settings.pop3_address = NULL;
     settings.management_address = "127.0.0.1";
     settings.replacement_message = "Parte reemplazada...";
     settings.censurable = NULL;
@@ -67,10 +72,8 @@ void setDefaultSettings() {
 }
 
 void readArguments(int argc, char *argv[]) {
-    FILE    *fp;
     int     option                  = 0;
     int     message_multiple_lines  = 0;
-    int     error                   = 0;
 
     //':' indicates that an argument is required.
     while ((option = getopt(argc, argv,"e:hl:L:m:M:o:p:P:t:v")) != -1) {
@@ -78,7 +81,7 @@ void readArguments(int argc, char *argv[]) {
             case 'e' : 
                 settings.error_file = malloc(strlen(optarg));
                 strcpy(settings.error_file, optarg);
-                fp = freopen(settings.error_file, "a", stderr);
+                freopen(settings.error_file, "a", stderr);
                 break;
             case 'h' : 
                 printf("HELP:\n");
@@ -113,7 +116,9 @@ void readArguments(int argc, char *argv[]) {
                     strcpy(settings.replacement_message, optarg);
                 }
                 else {
-                    settings.replacement_message = realloc(settings.replacement_message, strlen(settings.replacement_message) + strlen("\\n") + strlen(optarg));
+                    settings.replacement_message = realloc(settings.replacement_message, 
+                        strlen(settings.replacement_message) + strlen("\\n") + strlen(optarg));
+
                     strcat(settings.replacement_message, "\n");
                     strcat(settings.replacement_message, optarg);
                 }
@@ -140,7 +145,6 @@ void readArguments(int argc, char *argv[]) {
                 exit(0);
                 break;
             default: 
-                error = 1;
                 break;
         }
     }
@@ -151,7 +155,9 @@ void readArguments(int argc, char *argv[]) {
     }
 }
 
-void configureSocket(int* sock, int dom, int type, int prot, int level, int optname, int *optval, struct sockaddr_in *address, int *addr_len, int port, char *if_addr) {
+void configureSocket(int* sock, int dom, int type, int prot, int level, 
+                        int optname, int *optval, struct sockaddr_in *address, 
+                        int *addr_len, int port, char *if_addr) {
     //create a master socket for clients and a configuration master socket
     if( (*sock = socket(dom , type , prot)) == 0) {
         writeLog("master socket failed\n", proxy_errors_log);
@@ -160,7 +166,7 @@ void configureSocket(int* sock, int dom, int type, int prot, int level, int optn
         return;
     }
     //set master sockets to allow multiple connections
-    if( setsockopt(*sock, level, optname, (char *)optval, sizeof(*optval)) < 0 ) {
+    if(setsockopt(*sock, level, optname, (char *)optval, sizeof(*optval)) < 0) {
         writeLog(" setsockopt failed\n", proxy_errors_log);
         perror("setsockopt failed");
         close(*sock);
@@ -172,7 +178,8 @@ void configureSocket(int* sock, int dom, int type, int prot, int level, int optn
     *addr_len = sizeof(*address);
 
    
-    //bind the master client socket to localhost port 1110, and the config socket to 9090
+    //bind the master client socket to localhost port 1110, and the 
+    //config socket to 9090
     if (bind(*sock, (struct sockaddr *)address, sizeof(*address))<0) {
         writeLog(" bind socket failed\n", proxy_errors_log);
         perror("bind socket failed");
@@ -180,7 +187,8 @@ void configureSocket(int* sock, int dom, int type, int prot, int level, int optn
         return;
     }
          
-    //try to specify maximum of MAXCLIENTS pending connections for the master sockets. CHECK MAX AMOUNT OF FD...
+    //try to specify maximum of MAXCLIENTS pending connections for the 
+    //master sockets. CHECK MAX AMOUNT OF FD...
     if (listen(*sock, MAXCLIENTS) < 0) {
         writeLog(" listen failed\n", proxy_errors_log);
         perror("listen failed");
@@ -189,7 +197,7 @@ void configureSocket(int* sock, int dom, int type, int prot, int level, int optn
     }
 }
 
-void setSocketType( struct sockaddr_in* client_address, int port, char *if_addr ) {
+static void setSocketType(struct sockaddr_in* client_address, int port, char *if_addr) {
     //type of socket created for client
     client_address->sin_family      = AF_INET;
     if(if_addr == NULL)
@@ -200,7 +208,8 @@ void setSocketType( struct sockaddr_in* client_address, int port, char *if_addr 
     client_address->sin_port        = htons( port );
 }
 
-int addDescriptors( struct DescriptorsArrays* dA, int **conf_sockets_array, fd_set* readfds, fd_set* writefds, int n, int m) {
+int addDescriptors(struct DescriptorsArrays* dA, int **conf_sockets_array, 
+                        fd_set* readfds, fd_set* writefds, int n, int m) {
     int sdc, sds, conf_ds, max_sd;
     max_sd = 0;
 
@@ -252,19 +261,22 @@ int addDescriptors( struct DescriptorsArrays* dA, int **conf_sockets_array, fd_s
     return max_sd;
 }
 
-void handleConfConnection(int conf_master_socket, struct sockaddr_in *conf_address, int *conf_addr_len, int **conf_sockets_array, int *conf_sockets_amount, pthread_mutex_t *mtx){
+void handleConfConnection(int conf_master_socket, struct sockaddr_in *conf_address, 
+                                int *conf_addr_len, int **conf_sockets_array, 
+                                int *conf_sockets_amount, pthread_mutex_t *mtx){
     int         new_conf_socket;
-    int         add_fd              = 1;
-    char        *message            = "Connecting to POP3 proxy for configuration... \r\n";
+    int         add_fd           = 1;
+    char        *message         = "Connecting to POP3 proxy for configuration... \r\n";
 
-    if ((new_conf_socket = accept(conf_master_socket, (struct sockaddr *)conf_address, (socklen_t*)conf_addr_len))<0) {
+    if ((new_conf_socket = accept(conf_master_socket, (struct sockaddr *)conf_address, 
+                                    (socklen_t*)conf_addr_len))<0) {
         writeLog(" ---config--- accept failed\n", proxy_errors_log);
         perror("---config--- accept failed");
         return;
     }
 
     //send new connection greeting message
-    if( write(new_conf_socket, message, strlen(message)) != strlen(message) ) {
+    if(write(new_conf_socket, message, strlen(message)) != (ssize_t)strlen(message)) {
         writeLog(" ---config--- write greeting message failed\n", proxy_errors_log);
         perror("---config--- write greeting message failed");
     }
@@ -278,19 +290,25 @@ void handleConfConnection(int conf_master_socket, struct sockaddr_in *conf_addre
         }
     } 
     if(add_fd){
-        *conf_sockets_array = realloc( *conf_sockets_array, ((*conf_sockets_amount)+1)*sizeof(int) );
+        *conf_sockets_array = realloc( *conf_sockets_array, 
+                                        ((*conf_sockets_amount)+1)*sizeof(int) );
         (*conf_sockets_amount)++;
         (*conf_sockets_array)[(*conf_sockets_amount)-1] = new_conf_socket;
     }
     pthread_mutex_unlock(mtx);
 
-    printf("New configuration connection: Socket fd: %d , ip: %s , port: %d\n" , new_conf_socket , inet_ntoa(conf_address->sin_addr) , ntohs(conf_address->sin_port));
+    printf("New configuration connection: Socket fd: %d , ip: %s , port: %d\n" , 
+                new_conf_socket , inet_ntoa(conf_address->sin_addr) , 
+                ntohs(conf_address->sin_port));
 
     writeLog(" Admin connected\n", proxy_log);
     return;
 }
 
-void handleNewConnection(int ms, struct sockaddr_in *ca, int *cal, struct DescriptorsArrays *dA, pthread_mutex_t *mtx, int *cAm, struct buffer ****b, struct InfoClient** info_clients) {
+void handleNewConnection(int ms, struct sockaddr_in *ca, int *cal, 
+                            struct DescriptorsArrays *dA, pthread_mutex_t *mtx, 
+                            int *cAm, struct buffer ****b, 
+                            struct InfoClient** info_clients) {
     struct ThreadArgs*  threadArgs;
     pthread_t           tId;
 
@@ -306,8 +324,10 @@ void handleNewConnection(int ms, struct sockaddr_in *ca, int *cal, struct Descri
     threadArgs->mtx             = mtx;
     threadArgs->buffers         = b;
     threadArgs->info_clients    = info_clients;
-    //create new thread to resolve domain and connect to server. When it's done, add all file descriptors to arrays
-    if ( pthread_create( &threadForConnection, NULL, &handleThreadForConnection, (void*) threadArgs) !=0 ) {
+    //create new thread to resolve domain and connect to server. 
+    //When it's done, add all file descriptors to arrays
+    if ( pthread_create( &threadForConnection, NULL, &handleThreadForConnection, 
+            (void*) threadArgs) !=0 ) {
         writeLog(" thread creation failed\n", proxy_errors_log);
         perror("thread creation failed");
     }
@@ -315,9 +335,10 @@ void handleNewConnection(int ms, struct sockaddr_in *ca, int *cal, struct Descri
 
 }
 
-void* handleThreadForConnection(void* args) {
-    char                *message                                        = "Connecting through POP3 proxy... \r\n";
-    int                 new_server_socket , new_client_socket, rv, i;
+static void* handleThreadForConnection(void* args) {
+    char                *message              = "Connecting through POP3 proxy... \r\n";
+    int                 new_server_socket; 
+    int                 new_client_socket, i;
     struct ThreadArgs   *tArgs;
     //struct used for resolving name, if needed
     struct addrinfo     hints, *servinfo, *p;
@@ -329,31 +350,36 @@ void* handleThreadForConnection(void* args) {
 
     tArgs = (struct ThreadArgs *)args;
 
-    if ((new_client_socket = accept(tArgs->master_socket, (struct sockaddr *)tArgs->client_address, (socklen_t*)tArgs->client_addr_len))<0) {
+    if ((new_client_socket = accept(tArgs->master_socket, 
+                                    (struct sockaddr *)tArgs->client_address, 
+                                    (socklen_t*)tArgs->client_addr_len))<0) {
         writeLog(" accept failed\n", proxy_errors_log);
         perror("accept failed");
         pthread_kill( tArgs->tId, SIGUSR1);
         pthread_exit(0);
     }
 
-    memset(&servAddr4, 0, sizeof(servAddr4)); // Zero out structure
+    // Zero out structures
+    memset(&servAddr4, 0, sizeof(servAddr4)); 
     servAddr4.sin_family = AF_INET;
-    memset(&servAddr6, 0, sizeof(servAddr6)); // Zero out structure
+    memset(&servAddr6, 0, sizeof(servAddr6));
     servAddr6.sin6_family = AF_INET6;
     
     
     //IPv4
-    if( inet_pton(AF_INET, settings.origin_server, &servAddr4.sin_addr.s_addr) == 1 ) {
+    if( inet_pton(AF_INET, settings.origin_server, 
+                    &servAddr4.sin_addr.s_addr) == 1 ) {
         printf("IPv4\n");
         servAddr4.sin_port = htons(settings.origin_port);
-        if ((new_server_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) <= 0) {
+        if ((new_server_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) <= 0){
             writeLog(" server socket failed\n", proxy_errors_log);
             perror("server socket failed");
             close(new_client_socket);
             pthread_kill( tArgs->tId, SIGUSR1);
             pthread_exit(0);
         }
-        if (connect(new_server_socket, (struct sockaddr *) &servAddr4, sizeof(servAddr4)) < 0) {
+        if (connect(new_server_socket, (struct sockaddr *) &servAddr4, 
+                        sizeof(servAddr4)) < 0) {
             char *err_msg = "Error: connection refused.\n";
             writeLog(" connect failed\n", proxy_errors_log);
             perror("connect failed");
@@ -365,17 +391,19 @@ void* handleThreadForConnection(void* args) {
         } 
     }
     //IPv6
-    else if ( inet_pton(AF_INET6, settings.origin_server, &servAddr6.sin6_addr.s6_addr) == 1 ) {
+    else if ( inet_pton(AF_INET6, settings.origin_server, 
+                            &servAddr6.sin6_addr.s6_addr) == 1 ) {
         printf("IPv6\n");
         servAddr6.sin6_port = htons(settings.origin_port);
-        if ((new_server_socket = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP)) <= 0) {
+        if ((new_server_socket = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP)) <= 0){
             writeLog(" server socket failed\n", proxy_errors_log);
             perror("server socket failed");
             close(new_client_socket);
             pthread_kill( tArgs->tId, SIGUSR1);
             pthread_exit(0);
         }
-        if (connect(new_server_socket, (struct sockaddr *) &servAddr6, sizeof(servAddr6)) < 0) {
+        if (connect(new_server_socket, (struct sockaddr *) &servAddr6, 
+                        sizeof(servAddr6)) < 0) {
             char *err_msg = "Error: connection refused.\n";
             writeLog(" connect failed\n", proxy_errors_log);
             perror("connect failed");
@@ -393,9 +421,8 @@ void* handleThreadForConnection(void* args) {
         hints.ai_family     = AF_INET;
         hints.ai_socktype   = SOCK_STREAM;
 
-        //in case of receiving an IP, the creation of this thread is unnecessary. Check later.
-        //change localhost and pop3 strings.
-        if ((rv = getaddrinfo(settings.origin_server, "pop3", &hints, &servinfo)) != 0) {
+        //in case of receiving an IP, the creation of this thread is unnecessary.
+        if (getaddrinfo(settings.origin_server, "pop3", &hints, &servinfo) != 0){
             writeLog(" DNS resolution failed\n", proxy_errors_log);
             perror("DNS resolution failed");
             close(new_client_socket);
@@ -426,7 +453,8 @@ void* handleThreadForConnection(void* args) {
     }
              
     //send new connection greeting message
-    if( write(new_client_socket, message, strlen(message)) != strlen(message) ) {
+    if( write(new_client_socket, message, 
+                strlen(message)) != (ssize_t)strlen(message) ) {
         writeLog(" write greeting message failed\n", proxy_errors_log);
         perror("write greeting message failed");
     }
@@ -461,33 +489,46 @@ void* handleThreadForConnection(void* args) {
 
     pthread_mutex_unlock(tArgs->mtx);
 
-    printf("New connection: Client socket fd: %d , ip: %s , port: %d\n" , new_client_socket , inet_ntoa(tArgs->client_address->sin_addr) , ntohs(tArgs->client_address->sin_port));
-    printf("                Server socket fd: %d , ip: %s , port: %d\n" , new_server_socket , settings.origin_server , settings.origin_port);
+    printf("New connection: Client socket fd: %d , ip: %s , port: %d\n" , 
+                new_client_socket , inet_ntoa(tArgs->client_address->sin_addr), 
+                ntohs(tArgs->client_address->sin_port));
+    printf("                Server socket fd: %d , ip: %s , port: %d\n" , 
+                new_server_socket , settings.origin_server , settings.origin_port);
     metrics.concurrent_connections++;
     metrics.historical_accesses++;
     
-    //send signal to main thread to let it know that the domain name has been resolved and the connection has been made 
+    //send signal to main thread to let it know that the domain name has been 
+    //resolved and the connection has been made 
     pthread_kill( tArgs->tId, SIGUSR1);
     pthread_exit(0);
 }
 
 //Reserves space for every structure requiered...
-void reserveSpace(struct ThreadArgs * tArgs){
-    char            *aux_buf_c                        = NULL;
-    char            *aux_buf_s                        = NULL;
+static void reserveSpace(struct ThreadArgs * tArgs){
     struct buffer   *client_buffer, *server_buffer;
 
-    tArgs->dA->client_sockets_read          = realloc(tArgs->dA->client_sockets_read, (*(tArgs->clients_amount)+1)*sizeof(int));
-    tArgs->dA->client_sockets_write         = realloc(tArgs->dA->client_sockets_write, (*(tArgs->clients_amount)+1)*sizeof(int));
-    tArgs->dA->server_sockets_read          = realloc(tArgs->dA->server_sockets_read, (*(tArgs->clients_amount)+1)*sizeof(int));
-    tArgs->dA->server_sockets_write         = realloc(tArgs->dA->server_sockets_write, (*(tArgs->clients_amount)+1)*sizeof(int));
-    tArgs->dA->client_commands_to_process   = realloc(tArgs->dA->client_commands_to_process, (*(tArgs->clients_amount)+1)*sizeof(int));
-    tArgs->dA->server_commands_to_process   = realloc(tArgs->dA->server_commands_to_process, (*(tArgs->clients_amount)+1)*sizeof(int));
-    tArgs->dA->server_sends_closure         = realloc(tArgs->dA->server_sends_closure, (*(tArgs->clients_amount)+1)*sizeof(int));
-    tArgs->dA->client_needs_closure         = realloc(tArgs->dA->client_needs_closure, (*(tArgs->clients_amount)+1)*sizeof(int));
-    *(tArgs->info_clients)                  = realloc(*(tArgs->info_clients), (*(tArgs->clients_amount)+1)*sizeof(struct InfoClient));
-    *(tArgs->buffers)                       = realloc(*(tArgs->buffers), (*(tArgs->clients_amount)+1)*sizeof(struct buffer**));
-    pipes_fd                                = realloc(pipes_fd, (*(tArgs->clients_amount)+1)*sizeof(int*));
+    tArgs->dA->client_sockets_read          = realloc(tArgs->dA->client_sockets_read, 
+                                                (*(tArgs->clients_amount)+1)*sizeof(int));
+    tArgs->dA->client_sockets_write         = realloc(tArgs->dA->client_sockets_write, 
+                                                (*(tArgs->clients_amount)+1)*sizeof(int));
+    tArgs->dA->server_sockets_read          = realloc(tArgs->dA->server_sockets_read, 
+                                                (*(tArgs->clients_amount)+1)*sizeof(int));
+    tArgs->dA->server_sockets_write         = realloc(tArgs->dA->server_sockets_write, 
+                                                (*(tArgs->clients_amount)+1)*sizeof(int));
+    tArgs->dA->client_commands_to_process   = realloc(tArgs->dA->client_commands_to_process, 
+                                                (*(tArgs->clients_amount)+1)*sizeof(int));
+    tArgs->dA->server_commands_to_process   = realloc(tArgs->dA->server_commands_to_process, 
+                                                (*(tArgs->clients_amount)+1)*sizeof(int));
+    tArgs->dA->server_sends_closure         = realloc(tArgs->dA->server_sends_closure, 
+                                                (*(tArgs->clients_amount)+1)*sizeof(int));
+    tArgs->dA->client_needs_closure         = realloc(tArgs->dA->client_needs_closure, 
+                                                (*(tArgs->clients_amount)+1)*sizeof(int));
+    *(tArgs->info_clients)                  = realloc(*(tArgs->info_clients), 
+                                                (*(tArgs->clients_amount)+1)*sizeof(struct InfoClient));
+    *(tArgs->buffers)                       = realloc(*(tArgs->buffers), 
+                                                (*(tArgs->clients_amount)+1)*sizeof(struct buffer**));
+    pipes_fd                                = realloc(pipes_fd, 
+                                                (*(tArgs->clients_amount)+1)*sizeof(int*));
 
     (*(tArgs->clients_amount))++;
     (*(tArgs->buffers))[*(tArgs->clients_amount)-1] = malloc(2*sizeof(struct buffer*));
@@ -513,42 +554,51 @@ void reserveSpace(struct ThreadArgs * tArgs){
 
 }
 
-void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf_sockets_array, fd_set *readfds, fd_set *writefds, struct buffer ****b, struct sockaddr_in *client_address, struct sockaddr_in *conf_address, int *client_addr_len, int *conf_addr_len, int clients_amount, int conf_sockets_amount, struct InfoClient** info_clients, int* master_socket, int* conf_master_socket, int *opt_ms, int *opt_cms) {
-    int             i, str_size;
-    char            aux_buf[BUFSIZE];
-    struct buffer   ***buffer           = *b;
-
+void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, 
+                        int **conf_sockets_array, fd_set *readfds, fd_set *writefds, 
+                        struct buffer ****b, struct sockaddr_in *client_address, 
+                        struct sockaddr_in *conf_address, int *client_addr_len, 
+                        int *conf_addr_len, int clients_amount, int conf_sockets_amount, 
+                        struct InfoClient** info_clients, int* master_socket, 
+                        int* conf_master_socket, int *opt_ms, int *opt_cms) {
     //handle configuration admins
     for (int k = 0; k < conf_sockets_amount; k++ ){
         if (FD_ISSET( (*conf_sockets_array)[k] , readfds ))
-            handleManagementRequests(k, conf_sockets_array, conf_address, conf_addr_len, client_address, client_addr_len, master_socket, conf_master_socket, opt_ms, opt_cms);
+            handleManagementRequests(k, conf_sockets_array, conf_address, conf_addr_len, 
+                                        client_address, client_addr_len, master_socket, 
+                                        conf_master_socket, opt_ms, opt_cms);
     }
 
     //handle pop3 clients
-    for (i = 0; i < clients_amount; i++) {
+    for (int i = 0; i < clients_amount; i++) {
         
         //writing to client
         if (FD_ISSET( descriptors_arrays->client_sockets_write[i] , writefds )) {
             writeToClient(i, descriptors_arrays, b); 
         }
         //writing to server
-        if (FD_ISSET( descriptors_arrays->server_sockets_write[i] , writefds ) && ( (*info_clients)[i].pipeline_supported == 1 || !FD_ISSET(descriptors_arrays->server_sockets_read[i], readfds) ) ) {
+        if (FD_ISSET( descriptors_arrays->server_sockets_write[i] , writefds ) 
+                        && ( (*info_clients)[i].pipeline_supported == 1 ||
+                                 !FD_ISSET(descriptors_arrays->server_sockets_read[i], readfds) ) ) {
             writeToServer(i, descriptors_arrays, b, info_clients);
         }
 
         //reading requests from client  
-        if ( FD_ISSET(descriptors_arrays->client_sockets_read[i] , readfds) && (*info_clients)[i].available_to_write == 1 ) { 
+        if ( FD_ISSET(descriptors_arrays->client_sockets_read[i] , readfds) 
+                        && (*info_clients)[i].available_to_write == 1 ) { 
             readFromClient(i, descriptors_arrays, b, client_address, client_addr_len);
             
         }
 
         //reading responses from server
         if ( FD_ISSET(descriptors_arrays->server_sockets_read[i] , readfds) ) {
-            //If RETR was invoked, then its reply is redirected to a file instead of the client.
+            //If RETR was invoked, then its reply is redirected to a 
+            //file instead of the client.
             if ((*info_clients)[i].retr_invoked == 1){
-                pid_t pid, parent_pid;
+                pid_t pid;
 
-                //So that the parent knows he'll have a child (to write into the pipe instead of client)
+                //So that the parent knows he'll have a child (to write 
+                //into the pipe instead of client)
                 (descriptors_arrays->server_commands_to_process[i]) = 1;
 
                 if(pipe(pipes_fd[i]) == -1) {
@@ -563,11 +613,11 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf
                 }
 
                 printf("\nFORK\n");
-                parent_pid = getpid();
                 pid = fork();
                 if (pid ==  0) {
                     // This is the child process.
-                    //Sends errors to specific file instead of stderr. Don't know if it's needed when parent process already did this
+                    //Sends errors to specific file instead of stderr. 
+                    //Don't know if it's needed when parent process already did this
                     freopen(settings.error_file, "a", stderr);
                     setEnvironmentVars(i, (*info_clients)[i].user_name);                    
                     handleChildProcess(i);
@@ -580,7 +630,8 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf
                 }
                 else {
                     // This is the parent process
-                    //close parent read endpoint in first pipe and parent write endpoint in second pipe
+                    //close parent read endpoint in first pipe and 
+                    //parent write endpoint in second pipe
                     close(pipes_fd[i][0]);
                     pipes_fd[i][0] = -1;
                     close(pipes_fd[i][3]);
@@ -589,9 +640,11 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf
                 }
                 printf("Parent process keeps going\n\n");
             }
-            //Get response from server and send it to client if there was no RETR, or to child process otherwise
+            //Get response from server and send it to client if there was 
+            //no RETR, or to child process otherwise
             else {
-                readFromServer(i, descriptors_arrays, b, client_address, client_addr_len, info_clients);
+                readFromServer(i, descriptors_arrays, b, client_address, 
+                                client_addr_len, info_clients);
             }
         }
 
@@ -600,7 +653,7 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf
             readFromPipe(i, descriptors_arrays, b);
                
         }
-        //If server stopped returning an answer (this is usefull for mails), close pipe
+        //If server stopped returning an answer (this is for mails), close pipe
         //Look for a better way to do this
         int count;
         ioctl(descriptors_arrays->server_sockets_read[i], FIONREAD, &count);
@@ -615,7 +668,11 @@ void handleIOOperations(struct DescriptorsArrays *descriptors_arrays, int **conf
     } 
 }
 
-void handleManagementRequests(int k, int **conf_sockets_array, struct sockaddr_in *conf_address, int *conf_addr_len, struct sockaddr_in *client_address, int *client_addr_len, int *master_socket, int *conf_master_socket, int *opt_ms, int *opt_cms) {
+static void handleManagementRequests(int k, int **conf_sockets_array, 
+                                struct sockaddr_in *conf_address, int *conf_addr_len, 
+                                struct sockaddr_in *client_address, int *client_addr_len, 
+                                int *master_socket, int *conf_master_socket, int *opt_ms, 
+                                int *opt_cms) {
     enum    Response                { ERROR = 0, OK, GCC, GHA, GTB, VN, PP, MP };
     char    aux_conf_buf[BUFSIZE];
     int     conf_ds, resp;
@@ -651,8 +708,10 @@ void handleManagementRequests(int k, int **conf_sockets_array, struct sockaddr_i
 
     if( handleResponse == 0 ) {
         //Somebody disconnected , get his details and print
-        getpeername(conf_ds , (struct sockaddr*)conf_address , (socklen_t*)conf_addr_len);
-        printf("---config--- Config Host disconnected , ip %s , port %d \n" , inet_ntoa((*conf_address).sin_addr) , ntohs((*conf_address).sin_port));
+        getpeername(conf_ds , (struct sockaddr*)conf_address , 
+                        (socklen_t*)conf_addr_len);
+        printf("---config--- Config Host disconnected , ip %s , port %d \n" , 
+                    inet_ntoa((*conf_address).sin_addr) , ntohs((*conf_address).sin_port));
               
         //Close the socket and mark as 0 in list for reuse, or
         printf("---config--- CONNECTION %d, ADMIN CLOSES\n", k);
@@ -672,23 +731,25 @@ void handleManagementRequests(int k, int **conf_sockets_array, struct sockaddr_i
         resp = parseConfigCommand(aux_conf_buf);
         int log_err = 0;
         switch (resp) {
-        case ERROR: if ( write( conf_ds , er_msg, strlen(er_msg) ) != strlen(er_msg) )
+        case ERROR: if (write(conf_ds , er_msg, strlen(er_msg))!=(ssize_t)strlen(er_msg))
                         log_err = 1; 
                     break;   
-        case OK:    if ( write( conf_ds , ok_msg, strlen(ok_msg) ) != strlen(ok_msg) ) 
+        case OK:    if (write(conf_ds, ok_msg, strlen(ok_msg) )!=(ssize_t)strlen(ok_msg)) 
                         log_err = 1; 
                     break;
         case GCC:   if(metrics.cc_on == 1) {
-                        snprintf( number_of_cc, 11, "%d", metrics.concurrent_connections );
+                        snprintf( number_of_cc, 11, "%d", metrics.concurrent_connections);
                         number_of_cc[strlen(number_of_cc)] = '\n';
                         char gcc_response[strlen(cc_msg)+strlen(number_of_cc)];
                         strcpy(gcc_response, cc_msg);
                         strcat(gcc_response, number_of_cc);
-                        if ( write( conf_ds , gcc_response, strlen(gcc_response) ) != strlen(gcc_response) )
+                        if ( write( conf_ds , gcc_response, 
+                                strlen(gcc_response) ) != (ssize_t)strlen(gcc_response) )
                             log_err = 1;
                     }
                     else{
-                        if ( write( conf_ds , cc_off, strlen(cc_off) ) != strlen(cc_off) )
+                        if ( write( conf_ds , cc_off, 
+                                strlen(cc_off) ) != (ssize_t)strlen(cc_off) )
                             log_err = 1; 
                     }
                     break;
@@ -698,39 +759,50 @@ void handleManagementRequests(int k, int **conf_sockets_array, struct sockaddr_i
                         char gha_response[strlen(ha_msg)+strlen(number_of_ha)];
                         strcpy(gha_response, ha_msg);
                         strcat(gha_response, number_of_ha);
-                        if ( write( conf_ds , gha_response, strlen(gha_response) ) != strlen(gha_response) )
+                        if (write( conf_ds , gha_response, 
+                                strlen(gha_response))!=(ssize_t)strlen(gha_response))
                             log_err = 1;
                     }
                     else {
-                        if ( write( conf_ds , ha_off, strlen(ha_off) ) != strlen(ha_off) )
+                        if (write( conf_ds , ha_off, 
+                                strlen(ha_off) )!=(ssize_t)strlen(ha_off))
                             log_err = 1;   
                     }
                     break;
         case GTB:   if(metrics.tb_on == 1) {
-                        snprintf( number_of_tb, 21, "%lu", metrics.transfered_bytes );
+                        snprintf( number_of_tb, 21, "%lu", metrics.transfered_bytes);
                         number_of_tb[strlen(number_of_tb)] = '\n';
                         char gtb_response[strlen(tb_msg)+strlen(number_of_tb)];
                         strcpy(gtb_response, tb_msg);
                         strcat(gtb_response, number_of_tb);
-                        if ( write( conf_ds , gtb_response, strlen(gtb_response) ) != strlen(gtb_response) )
+                        if ( write( conf_ds , gtb_response, 
+                                strlen(gtb_response) ) != (ssize_t)strlen(gtb_response))
                             log_err = 1;
                     }
                     else {
-                        if ( write( conf_ds , tb_off, strlen(tb_off) ) != strlen(tb_off) )
+                        if ( write( conf_ds , tb_off, 
+                                strlen(tb_off) ) != (ssize_t)strlen(tb_off) )
                             log_err = 1;
                     }
                     break;
-        case VN:    if ( write( conf_ds , settings.version, strlen(settings.version) ) != strlen(settings.version) )
+        case VN:    if (write( conf_ds , settings.version, 
+                            strlen(settings.version) )!=(ssize_t)strlen(settings.version))
                         log_err = 1; 
                     break;
         case PP:    close(*master_socket);
-                    configureSocket(master_socket, AF_INET, SOCK_STREAM, IPPROTO_TCP, SOL_SOCKET, SO_REUSEADDR, opt_ms, client_address, client_addr_len, settings.pop3_port, settings.pop3_address);
-                    if ( write( conf_ds , ok_msg, strlen(ok_msg) ) != strlen(ok_msg) ) 
+                    configureSocket(master_socket, AF_INET, SOCK_STREAM, 
+                                    IPPROTO_TCP, SOL_SOCKET, SO_REUSEADDR, opt_ms, 
+                                    client_address, client_addr_len, settings.pop3_port, 
+                                    settings.pop3_address);
+                    if (write( conf_ds , ok_msg, strlen(ok_msg) )!=(ssize_t)strlen(ok_msg)) 
                         log_err = 1;
                     break;
         case MP:    close(*conf_master_socket);
-                    configureSocket(conf_master_socket, PF_INET, SOCK_STREAM, IPPROTO_SCTP, SOL_SOCKET, SO_REUSEADDR, opt_cms, conf_address, conf_addr_len, settings.management_port, settings.management_address);
-                    if ( write( conf_ds , ok_msg, strlen(ok_msg) ) != strlen(ok_msg) )
+                    configureSocket(conf_master_socket, PF_INET, SOCK_STREAM, 
+                                        IPPROTO_SCTP, SOL_SOCKET, SO_REUSEADDR, opt_cms, 
+                                        conf_address, conf_addr_len, 
+                                        settings.management_port, settings.management_address);
+                    if (write( conf_ds , ok_msg, strlen(ok_msg) ) != (ssize_t)strlen(ok_msg))
                         log_err = 1;
                     break;
         default:    break;
@@ -743,65 +815,63 @@ void handleManagementRequests(int k, int **conf_sockets_array, struct sockaddr_i
 
 }
 
-void writeToClient(int i, struct DescriptorsArrays *descriptors_arrays, struct buffer ****b){
+static void writeToClient(int i, struct DescriptorsArrays *descriptors_arrays, 
+                        struct buffer ****b){
     char            aux_buf[BUFSIZE+1];
-    struct buffer   ***buffer         = *b;
+    struct buffer   ***buff         = *b;
 
     printf("CONNECTION %d, ENTER WRITE TO CLIENT\n", i);
     for( int j = 0 ; j <= BUFSIZE ; j++ ) {
         aux_buf[j] = '\0';
     }
     size_t  rbytes  = 0;
-    uint8_t *ptr    = buffer_read_ptr(buffer[i][1], &rbytes);
+    char *ptr    = buffer_read_ptr(buff[i][1], &rbytes);
     memcpy(aux_buf,ptr,strlen(ptr));
 
     //in case of reading an entire command, add space for '\0'
-    if( (buffer[i][1]->read + rbytes) < buffer[i][1]->limit ){
+    if( (buff[i][1]->read + rbytes) < buff[i][1]->limit ){
         rbytes++;
     }
 
-    buffer_read_adv(buffer[i][1], rbytes);
-    if ( write( descriptors_arrays->client_sockets_write[i], aux_buf, strlen(aux_buf)) != strlen(aux_buf)) {
+    buffer_read_adv(buff[i][1], rbytes);
+    if ( write( descriptors_arrays->client_sockets_write[i], aux_buf, 
+                    strlen(aux_buf)) != (ssize_t)strlen(aux_buf)) {
         writeLog(" write failed\n", proxy_errors_log);
         perror("write failed");       
     }  
-    if ( !buffer_can_read(buffer[i][1]) ){
+    if ( !buffer_can_read(buff[i][1]) ){
         descriptors_arrays->client_sockets_write[i] = 0;
     }
 
-    //if server has ended and pipe had something left to send and now it has finished too
+    //if server has ended and pipe had something left to 
+    //send and now it has finished too
     if(descriptors_arrays->server_sends_closure[i] == 1) {
         close( descriptors_arrays->client_sockets_read[i] );
         descriptors_arrays->client_sockets_read[i] = 0;
-        buffer_reset(buffer[i][1]);
+        buffer_reset(buff[i][1]);
     }
 }
 
-void readFromClient(int i, struct DescriptorsArrays *descriptors_arrays, struct buffer ****b, struct sockaddr_in *client_address, int *client_addr_len) {
-    int             str_size;
+static void readFromClient(int i, struct DescriptorsArrays *descriptors_arrays, 
+                        struct buffer ****b, struct sockaddr_in *client_address, 
+                        int *client_addr_len) {
+    size_t          str_size;
     char            aux_buf[BUFSIZE];
-    struct buffer   ***buffer           = *b;  
+    struct buffer   ***buff           = *b;  
  
     printf("CONNECTION %d, ENTER READ FROM CLIENT\n", i);
     for( int j = 0 ; j < BUFSIZE ; j++ ) {
         aux_buf[j] = '\0';
     }
     //Handle client conection
-    int handleResponse = read( descriptors_arrays->client_sockets_read[i] , aux_buf, size_to_write(buffer[i][1]));
-    /*printf("can read: %d\n", buffer_can_read(buffer[i][0]));
-    printf("can read: %d\n", buffer_can_read(buffer[i][1]));
-    char c;*/
-    /*&& recv(descriptors_arrays->server_sockets_read[i], &c, 1, MSG_PEEK) <= 0*/
+    int handleResponse = read( descriptors_arrays->client_sockets_read[i] , 
+                                aux_buf, size_to_write(buff[i][1]));
     if( handleResponse == 0 ) {
-
-        /*int count;
-        ioctl(descriptors_arrays->server_sockets_read[i], FIONREAD, &count);
-        printf("count: %d\n", count );
-        if( buffer_can_read(buffer[i][0]) == 0 && buffer_can_read(buffer[i][1]) == 0 && count <= 0 )  {
-        */
         //Somebody disconnected , get his details and print
-        getpeername(descriptors_arrays->client_sockets_read[i] , (struct sockaddr*)client_address , (socklen_t*)client_addr_len);
-        printf("Host disconnected , ip %s , port %d \n" , inet_ntoa((*client_address).sin_addr) , ntohs((*client_address).sin_port));
+        getpeername(descriptors_arrays->client_sockets_read[i] , 
+                        (struct sockaddr*)client_address , (socklen_t*)client_addr_len);
+        printf("Host disconnected , ip %s , port %d \n" , 
+                inet_ntoa((*client_address).sin_addr) , ntohs((*client_address).sin_port));
                       
         //Close the socket and mark as 0 in list for reuse
         printf("CONNECTION %d, CLIENT CLOSES\n", i);
@@ -811,8 +881,8 @@ void readFromClient(int i, struct DescriptorsArrays *descriptors_arrays, struct 
             metrics.concurrent_connections--;
         descriptors_arrays->client_sockets_read[i] = 0;
         descriptors_arrays->server_sockets_read[i] = 0;
-        buffer_reset(buffer[i][0]);
-        buffer_reset(buffer[i][1]);
+        buffer_reset(buff[i][0]);
+        buffer_reset(buff[i][1]);
 
         writeLog(" Client disconnected\n", proxy_log);
     //}   
@@ -834,7 +904,7 @@ void readFromClient(int i, struct DescriptorsArrays *descriptors_arrays, struct 
 
         //write into server buffer
         size_t  wbytes  = 0;
-        uint8_t *ptr    = buffer_write_ptr(buffer[i][0], &wbytes);
+        char *ptr    = buffer_write_ptr(buff[i][0], &wbytes);
 
         if( wbytes < str_size ){
             writeLog(" no space in buffer to read\n", proxy_errors_log);
@@ -842,18 +912,19 @@ void readFromClient(int i, struct DescriptorsArrays *descriptors_arrays, struct 
         }
         else {
             memcpy(ptr, aux_buf, str_size);
-            buffer_write_adv(buffer[i][0], str_size);
+            buffer_write_adv(buff[i][0], str_size);
             (descriptors_arrays->client_commands_to_process[i]) = 1;
             descriptors_arrays->server_sockets_write[i] = descriptors_arrays->server_sockets_read[i]; 
         }
     }
 }
 
-void writeToServer(int i, struct DescriptorsArrays *descriptors_arrays, struct buffer ****b, struct InfoClient** info_clients) {
+static void writeToServer(int i, struct DescriptorsArrays *descriptors_arrays, 
+                    struct buffer ****b, struct InfoClient** info_clients) {
     enum Command    { USER = 0, RETR, CAPA, OTHER };
     char            aux_buf[BUFSIZE];
     int             cmd, keep_sending;
-    struct buffer   ***buffer                         = *b;
+    struct buffer   ***buff                         = *b;
     
     printf("CONNECTION %d, ENTER WRITE TO SERVER\n", i);
     for( int j = 0 ; j < BUFSIZE ; j++ ) {
@@ -864,26 +935,31 @@ void writeToServer(int i, struct DescriptorsArrays *descriptors_arrays, struct b
     int     first_cmd     = 1;
     //If server does not support pipelining, sends one command at a time
     //buffer_read_ptr_for_client reads only one command
-    //If it does, iterate and send commands (this is to analyse if there is a retr)            
+    //If it does, iterate and send commands 
+    //(this is to analyse if there is a retr)            
     keep_sending = 1;
     do {            
-        uint8_t *ptr    = buffer_read_ptr_for_client(buffer[i][0], &rbytes);
+        char *ptr    = buffer_read_ptr_for_client(buff[i][0], &rbytes);
         memcpy(aux_buf+total_rbytes,ptr,rbytes);
 
         //Analyse sending command
         cmd = parseClientCommand(aux_buf+total_rbytes);
         if( cmd == USER ){
             //set name in info_client struct
-            //to see if command is 'USER name', it needs to escape the first 5 chars
+            //to see if command is 'USER name', 
+            //it needs to escape the first 5 chars
             if (commandLength(aux_buf+total_rbytes) >= 6){
-                (*info_clients)[i].user_name = malloc(commandLength(aux_buf+total_rbytes+5+1)*sizeof(char)); //+1 for \0
-                memcpy((*info_clients)[i].user_name, aux_buf+total_rbytes+5, commandLength(aux_buf+total_rbytes+5));
+                //+1 for \0
+                (*info_clients)[i].user_name = malloc(commandLength(aux_buf+total_rbytes+5+1)*sizeof(char));
+                memcpy((*info_clients)[i].user_name, aux_buf+total_rbytes+5, 
+                            commandLength(aux_buf+total_rbytes+5));
                 (*info_clients)[i].user_name[commandLength(aux_buf+total_rbytes+5)] = '\0';
                 printf("New user: %s\n", (*info_clients)[i].user_name);
             }
         }
         else if( cmd == RETR ){
-            //to see if command is 'RETR n', it needs to escape the first 6 chars (counting \n at the end)
+            //to see if command is 'RETR n', it needs to escape the 
+            //first 6 chars (counting \n at the end)
             if (commandLength(aux_buf+total_rbytes) >= 6){
                 //There's no need to parse mail if this condition is false
                 if( (settings.censurable != NULL || settings.cmd != NULL) ) {
@@ -897,27 +973,28 @@ void writeToServer(int i, struct DescriptorsArrays *descriptors_arrays, struct b
             printf("CAPA invoked\n");
         }
 
-        buffer_read_adv(buffer[i][0], rbytes);
+        buffer_read_adv(buff[i][0], rbytes);
         total_rbytes += rbytes;
         first_cmd     = 0;
 
-        if( (*info_clients)[i].pipeline_supported == 0 || !buffer_can_read(buffer[i][0]) )
+        if((*info_clients)[i].pipeline_supported == 0||!buffer_can_read(buff[i][0]))
             keep_sending = 0;
     
     } while ( keep_sending == 1);
             
-    if ( write( descriptors_arrays->server_sockets_write[i], aux_buf, strlen(aux_buf)) != strlen(aux_buf)) {
+    if ( write( descriptors_arrays->server_sockets_write[i], 
+                aux_buf, strlen(aux_buf)) != (ssize_t)strlen(aux_buf)) {
         writeLog(" write failed\n", proxy_errors_log);
         perror("write failed");       
     }
 
-    if ( !buffer_can_read(buffer[i][0]) ){
+    if ( !buffer_can_read(buff[i][0]) ){
         (descriptors_arrays->client_commands_to_process[i]) = 0;
         descriptors_arrays->server_sockets_write[i]         = 0;
     }
 }
 
-void handleChildProcess(int i) {
+static void handleChildProcess(int i) {
     char        child_aux_buf_in[BUFSIZE];
     char        child_aux_buf_out[BUFSIZE];
     char        conn_number[11];
@@ -972,9 +1049,12 @@ void handleChildProcess(int i) {
     fclose(retrieved_mail);
     //fclose(transformed_mail);
 
-    //This is where we should call the transformation program and that program should change the files.
-    if(settings.censurable != NULL) 
+    //This is where we should call the transformation program and that 
+    //program should change the files.
+    if(settings.censurable != NULL) {
+        printf("Calling stripmime\n");
         system("./stripmime");
+    }
     else if(settings.cmd != NULL) {
         char sys_command[strlen(settings.cmd)+36];    
         strcpy(sys_command, settings.cmd);
@@ -986,8 +1066,10 @@ void handleChildProcess(int i) {
 
     //Send transformed mail to other pipe and then to client's buffer
     transformed_mail = fopen(file_path_resp, "r");
-    while ((nread = fread(child_aux_buf_out, 1, BUFSIZE-1, transformed_mail)) > 0){
-        if ( write( pipes_fd[i][3] , child_aux_buf_out, strlen(child_aux_buf_out)) != strlen(child_aux_buf_out) ) {
+    while ((nread = fread(child_aux_buf_out, 1, BUFSIZE-1, 
+                            transformed_mail)) > 0){
+        if ( write(pipes_fd[i][3] , child_aux_buf_out, 
+                    strlen(child_aux_buf_out)) != (ssize_t)strlen(child_aux_buf_out)){
             writeLog(" write failed\n", proxy_errors_log);
             perror("write failed");       
         }
@@ -1010,27 +1092,31 @@ void handleChildProcess(int i) {
     close(pipes_fd[i][3]);
 }
 
-void readFromServer(int i, struct DescriptorsArrays *descriptors_arrays, struct buffer ****b, struct sockaddr_in *client_address, int *client_addr_len, struct InfoClient** info_clients) {
-    int             str_size;
+static void readFromServer(int i, struct DescriptorsArrays *descriptors_arrays, 
+                        struct buffer ****b, struct sockaddr_in *client_address, 
+                        int *client_addr_len, struct InfoClient** info_clients) {
+    size_t          str_size;
     char            aux_buf[BUFSIZE];
-    struct buffer   ***buffer             = *b;
+    struct buffer   ***buff             = *b;
     
     printf("CONNECTION %d, ENTER READ FROM SERVER\n", i);
     for( int j = 0 ; j < BUFSIZE ; j++ ) {
         aux_buf[j] = '\0';
     }
     //Handle server conection
-    int handleResponse = read( descriptors_arrays->server_sockets_read[i] , aux_buf, size_to_write(buffer[i][1]));
+    int handleResponse = read( descriptors_arrays->server_sockets_read[i] , 
+                                aux_buf, size_to_write(buff[i][1]));
     if( handleResponse == 0 ) {
         //Somebody disconnected , get his details and print
-        getpeername(descriptors_arrays->client_sockets_read[i] , (struct sockaddr*)client_address , (socklen_t*)client_addr_len);
+        getpeername(descriptors_arrays->client_sockets_read[i] , 
+                    (struct sockaddr*)client_address , (socklen_t*)client_addr_len);
         printf("Server disconnected\n");
                       
         //Close the socket and mark as 0 in list for reuse
         printf("CONNECTION %d, SERVER CLOSES\n", i);
         close( descriptors_arrays->server_sockets_read[i] );    
         descriptors_arrays->server_sockets_read[i] = 0;
-        buffer_reset(buffer[i][0]);
+        buffer_reset(buff[i][0]);
         if(metrics.concurrent_connections > 0)
             metrics.concurrent_connections--;
         //wait for second pipe to receive all data and tell client to close
@@ -1041,7 +1127,7 @@ void readFromServer(int i, struct DescriptorsArrays *descriptors_arrays, struct 
         else {
             close( descriptors_arrays->client_sockets_read[i] );
             descriptors_arrays->client_sockets_read[i] = 0;
-            buffer_reset(buffer[i][1]);
+            buffer_reset(buff[i][1]);
         }      
 
         writeLog(" Server disconnected\n", proxy_log);            
@@ -1066,7 +1152,8 @@ void readFromServer(int i, struct DescriptorsArrays *descriptors_arrays, struct 
             (*info_clients)[i].capa_invoked = 0;
         }
                 
-        //Maybe with strlen it's enough, check last char if buf is full in that case
+        //Maybe with strlen it's enough, check last char if 
+        //buf is full in that case
         str_size = 0;
         for( int j = 0; j < BUFSIZE; j++){
             if(aux_buf[j]!='\0'){
@@ -1080,7 +1167,7 @@ void readFromServer(int i, struct DescriptorsArrays *descriptors_arrays, struct 
 
         //write in first pipe for child process
         if((descriptors_arrays->server_commands_to_process[i]) == 1) {
-            if ( write( pipes_fd[i][1] , aux_buf, str_size) != str_size ) {
+            if ( write( pipes_fd[i][1] , aux_buf, str_size) != (ssize_t)str_size ) {
                 writeLog(" write failed\n", proxy_errors_log);
                 perror("write failed");       
             }
@@ -1088,14 +1175,14 @@ void readFromServer(int i, struct DescriptorsArrays *descriptors_arrays, struct 
         //write directly to client buffer
         else {
             size_t  wbytes  = 0;
-            uint8_t *ptr    = buffer_write_ptr(buffer[i][1], &wbytes);
+            char *ptr    = buffer_write_ptr(buff[i][1], &wbytes);
             if( wbytes < str_size ){
                 writeLog(" no space in buffer to read\n", proxy_errors_log);
                 perror("no space in buffer to read");
             }
             else {
                 memcpy(ptr, aux_buf, str_size);
-                buffer_write_adv(buffer[i][1], str_size);
+                buffer_write_adv(buff[i][1], str_size);
             }
             descriptors_arrays->client_sockets_write[i] = descriptors_arrays->client_sockets_read[i];
             (*info_clients)[i].available_to_write = 1;
@@ -1103,20 +1190,23 @@ void readFromServer(int i, struct DescriptorsArrays *descriptors_arrays, struct 
     }
 }
 
-void readFromPipe(int i, struct DescriptorsArrays *descriptors_arrays, struct buffer ****b) {
-    int             str_size;
+static void readFromPipe(int i, struct DescriptorsArrays *descriptors_arrays, 
+                    struct buffer ****b) {
+    size_t          str_size;
     char            aux_buf[BUFSIZE];
-    struct buffer   ***buffer                 = *b;
+    struct buffer   ***buff                 = *b;
     
     printf("CONNECTION %d, ENTER READ FROM PIPE\n", i);
     for( int j = 0 ; j < BUFSIZE ; j++ ) {
         aux_buf[j] = '\0';
     }
     //Handle pipe conection
-    int handleResponse = read( pipes_fd[i][2] , aux_buf, size_to_write(buffer[i][1]));
+    int handleResponse = read( pipes_fd[i][2] , aux_buf, 
+                                size_to_write(buff[i][1]));
     if( handleResponse > 0 ) {
         printf("Read something from pipe\n");
-        //Maybe with strlen it's enough, check last char if buf is full in that case
+        //Maybe with strlen it's enough, check last char if 
+        //buf is full in that case
         str_size = 0;
         for( int j = 0; j < BUFSIZE; j++){
             if(aux_buf[j]!='\0'){
@@ -1130,14 +1220,14 @@ void readFromPipe(int i, struct DescriptorsArrays *descriptors_arrays, struct bu
 
         //write into client buffer
         size_t  wbytes  = 0;
-        uint8_t *ptr    = buffer_write_ptr(buffer[i][1], &wbytes);
+        char *ptr    = buffer_write_ptr(buff[i][1], &wbytes);
         if( wbytes < str_size ){
             writeLog(" no space in buffer to read\n", proxy_errors_log);
             perror("no space in buffer to read");
         }
         else {
             memcpy(ptr, aux_buf, str_size);
-            buffer_write_adv(buffer[i][1], str_size);
+            buffer_write_adv(buff[i][1], str_size);
         }
         descriptors_arrays->client_sockets_write[i] = descriptors_arrays->client_sockets_read[i];
     }

@@ -16,7 +16,7 @@ const char * err_status = "-ERR";
 
 // Copies the first line of the file and deletes it.
 // This is so we don't have to deal with POP3 stuff in the mime parser (+OK, -ERR).
-int main() {
+int main(int argc, char *argv[]) {
   char buffer[MAX_LENGTH] = "";
   char *filter_medias, *filter_message, *pop3_filter_version, *pop3_server, *pop3_username, *client_number;
 

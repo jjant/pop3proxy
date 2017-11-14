@@ -1,8 +1,28 @@
 #ifndef PROXY_UTILITIES_H
 #define PROXY_UTILITIES_H
 
+#include <stdio.h>
+#include <string.h>
+#include <ctype.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <unistd.h> 
+#include <arpa/inet.h>   
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <sys/time.h> 
+#include <sys/select.h>
+#include <stdbool.h>
+#include <pthread.h>
+#include <sys/signal.h>
+#include <sys/ioctl.h>
+#include <fcntl.h>
+
 #define BUFSIZE 2048
 #define MAXCLIENTS 1024
+
 
 struct DescriptorsArrays{
     int *client_sockets_read;
@@ -59,88 +79,109 @@ struct Settings{
 	char *version;				//0.0.0
 };
 
-void setNullPointers(struct DescriptorsArrays*, int**, struct buffer****, struct InfoClient**);
+void setNullPointers(struct DescriptorsArrays*, int**, 
+						struct buffer****, struct InfoClient**);
 
-void setDefaultMetrics();
+void setDefaultMetrics(void);
 
-void setDefaultSettings();
+void setDefaultSettings(void);
 
 void readArguments(int argc, char *argv[]);
 
-void configureSocket(int*, int, int, int, int, int, int*, struct sockaddr_in*, int*, int, char*);
+void configureSocket(int*, int, int, int, int, int, int*, struct sockaddr_in*, 
+						int*, int, char*);
 
 /**
  * Configures the type of socket for clients
  */
-void setSocketType(struct sockaddr_in*, int, char*);
+static void setSocketType(struct sockaddr_in*, int, char*);
 
 /**
- * Adds descriptors currently connected to read and writes sets (config sockets too). 
+ * Adds descriptors currently connected to read and writes sets 
+ * (config sockets too). 
  * It's used in the select function.
  */
-int addDescriptors(struct DescriptorsArrays*, int**, fd_set*, fd_set*, int, int);
+int addDescriptors(struct DescriptorsArrays*, int**, fd_set*, fd_set*, 
+						int, int);
 
 /**
  * Accepts new config connection.
  */
-void handleConfConnection(int, struct sockaddr_in*, int*, int**, int*, pthread_mutex_t*);
+void handleConfConnection(int, struct sockaddr_in*, int*, int**, int*, 
+						pthread_mutex_t*);
 
 /**
- * Accepts new connection and connects another socket to server (calling handleThreadForConnection).
+ * Accepts new connection and connects another socket to server
+ * (calling handleThreadForConnection).
  */
-void handleNewConnection(int, struct sockaddr_in*, int*, struct DescriptorsArrays*, pthread_mutex_t* mtx, int*, struct buffer****, struct InfoClient**);
+void handleNewConnection(int, struct sockaddr_in*, int*, struct DescriptorsArrays*, 
+							pthread_mutex_t* mtx, int*, struct buffer****, 
+							struct InfoClient**);
 
 /**
  * Resolves DNS and connects with server, in separated thread.
  * Sets the corresponding file descriptors in descriptors arrays.
  */
-void* handleThreadForConnection(void*);
+static void* handleThreadForConnection(void*);
 
 /**
- * Reserves space for buffers and descriptors arrays if needed (on new clients arrivals)
+ * Reserves space for buffers and descriptors arrays if needed 
+ * (on new clients arrivals)
  */
-void reserveSpace(struct ThreadArgs*);
+static void reserveSpace(struct ThreadArgs*);
 
 /**
  * Handles read and write operations, on files identified in descriptors arrays.
  * This function calls the specific ones described below.
  */
-void handleIOOperations(struct DescriptorsArrays*, int**, fd_set*, fd_set*, struct buffer****, struct sockaddr_in* , struct sockaddr_in*, int*, int*, int, int, struct InfoClient**, int*, int*, int*, int*);
+void handleIOOperations(struct DescriptorsArrays*, int**, fd_set*, fd_set*, 
+							struct buffer****, struct sockaddr_in* , 
+							struct sockaddr_in*, int*, int*, int, int, 
+							struct InfoClient**, int*, int*, int*, int*);
 
 /**
- * Handles managemente IO operations. Uses parsers to analyze requests for configuration.
+ * Handles managemente IO operations. Uses parsers to analyze requests
+ * for configuration.
  */
-void handleManagementRequests(int, int**, struct sockaddr_in*, int*, struct sockaddr_in*, int*, int*, int*, int*, int*);
+static void handleManagementRequests(int, int**, struct sockaddr_in*, int*, 
+								struct sockaddr_in*, int*, int*, int*, 
+								int*, int*);
 
 /**
  * Reads from buffer and writes to the client file descriptor.
  */
-void writeToClient(int, struct DescriptorsArrays*, struct buffer****);
+static void writeToClient(int, struct DescriptorsArrays*, struct buffer****);
 
 /**
- * Reads commands from the client file descriptor, analyses them and writes them to the buffer .
+ * Reads commands from the client file descriptor, analyses them and 
+ * writes them to the buffer .
  */
-void readFromClient(int i, struct DescriptorsArrays*, struct buffer****, struct sockaddr_in*, int*);
+static void readFromClient(int i, struct DescriptorsArrays*, struct buffer****, 
+						struct sockaddr_in*, int*);
 
 /**
  * Reads from buffer and writes to the server file descriptor.
  */
-void writeToServer(int, struct DescriptorsArrays*, struct buffer****, struct InfoClient**);
+static void writeToServer(int, struct DescriptorsArrays*, struct buffer****, 
+						struct InfoClient**);
 
 /**
  * When it's created, a child process handles the mail transformation.
  */
-void handleChildProcess(int);
+static void handleChildProcess(int);
 
 /**
- * Reads responses from server, and sends them to the client or to child process accordingly.
+ * Reads responses from server, and sends them to the client or to
+ * child process accordingly.
  */
-void readFromServer(int, struct DescriptorsArrays*, struct buffer****, struct sockaddr_in*, int*, struct InfoClient**);
+static void readFromServer(int, struct DescriptorsArrays*, struct buffer****, 
+						struct sockaddr_in*, int*, struct InfoClient**);
 
 /**
- * Reads from pipe when child process retrieved transformed mail and writes to the client file descriptor.
+ * Reads from pipe when child process retrieved transformed mail and writes 
+ * to the client file descriptor.
  */
-void readFromPipe(int, struct DescriptorsArrays*, struct buffer****);
+static void readFromPipe(int, struct DescriptorsArrays*, struct buffer****);
 
 void setEnvironmentVars(int, const char*);
 

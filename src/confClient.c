@@ -15,8 +15,8 @@
 FILE *fp;
 int  sock;
 
-void createMessageToSend(char*, char*);
-void sendAndReceive(char*, int);
+static void createMessageToSend(const char*, const char*);
+static void sendAndReceive(const char*, int);
 
 int main(int argc, char *argv[]) {
     struct sockaddr_in 	 proxy_address;
@@ -25,7 +25,6 @@ int main(int argc, char *argv[]) {
     //Aux variables
     int                  option                     = 0;
     int                  message_multiple_lines     = 0;
-    int                  error                      = 0;
     char                 *proxy_IP;
     int                  proxy_port;
 
@@ -34,8 +33,8 @@ int main(int argc, char *argv[]) {
     	printf("Parameters must be <Server Address> <Server Port> and <options...>\n");
         exit(EXIT_FAILURE);
 	}
-    proxy_IP   = argv[1];          // First arg: server IP address (dotted quad)
-    proxy_port  = atoi(argv[2]);    // Second arg: server port
+    proxy_IP   = argv[1];        // First arg: server IP address (dotted quad)
+    proxy_port  = atoi(argv[2]); // Second arg: server port
 
     for( int j = 0; j < BUFSIZE; j++)
         initial_buffer[j] = '\0';
@@ -61,7 +60,8 @@ int main(int argc, char *argv[]) {
   	proxy_address.sin_port = htons(proxy_port);    
 
   	// Establish the connection to the proxy
-  	if (connect(sock, (struct sockaddr *) &proxy_address, sizeof(proxy_address)) < 0) {
+  	if (connect(sock, (struct sockaddr *) &proxy_address, 
+                    sizeof(proxy_address)) < 0) {
     	perror("connect failed");
     	exit(EXIT_FAILURE);
   	}
@@ -74,7 +74,7 @@ int main(int argc, char *argv[]) {
 
     fp = fopen("metrics.txt", "w");
 
-    while ((option = getopt(argc, argv,"s:e:hl:L:m:M:o:p:P:t:v123456789")) != -1) {
+    while ((option = getopt(argc, argv, "s:e:hl:L:m:M:o:p:P:t:v123456789")) != -1) {
         switch (option) {
             case 's' :
                 createMessageToSend("OS ", optarg);
@@ -175,7 +175,6 @@ int main(int argc, char *argv[]) {
                 sendAndReceive("RTB", 0);
                 break;
             default: 
-                error = 1;
                 break;
         }
     }
@@ -187,14 +186,14 @@ int main(int argc, char *argv[]) {
 	return 0;
 }
 
-void createMessageToSend(char *pref, char *msg) {
+static void createMessageToSend(const char *pref, const char *msg) {
     char buf[strlen(msg)+3];
     strcpy(buf, pref);
     strcpy(buf+3, msg);
     sendAndReceive(buf, 0);
 }
 
-void sendAndReceive(char *msg, int saveMetric) {
+static void sendAndReceive(const char *msg, int saveMetric) {
     char resp_buffer[BUFSIZE]; 
     for (int i = 0; i < BUFSIZE; i++)
         resp_buffer[i] = '\0';

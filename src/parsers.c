@@ -33,18 +33,18 @@ int parseClientCommand(char b[]){
     }
 }
 
-int analyzeString( const char buffer[], const char *command) {
+int analyzeString( const char buff[], const char *command) {
     enum StringState { READ = 0, RIGHT, WRONG };
     
     int  bufIndex  = 0; 
     int  comIndex  = 0;
     int  state     = READ;
     while ( state == READ ){
-        char uppercaseLetter = toupper( buffer[bufIndex] );
-        if ( command[comIndex] == '\0' && ( uppercaseLetter == '\n' || uppercaseLetter == ' ' ) ) {
+        char uppercaseLetter = toupper( buff[bufIndex] );
+        if (command[comIndex] == '\0'&&(uppercaseLetter == '\n'||uppercaseLetter == ' ')){
             state = RIGHT;
         }
-        else if ( uppercaseLetter == '\0' || ( uppercaseLetter != command[comIndex] ) ) {
+        else if (uppercaseLetter == '\0' || (uppercaseLetter != command[comIndex])){
             state = WRONG;
         }
         comIndex++;
@@ -75,47 +75,47 @@ int parseConfigCommand(char b[]){
     enum Response { ERROR = 0, OK, GCC, GHA, GTB, VN, PP, MP };
     
     //It only compares the first 3 or 2 chars of the command. Check later.
-    if ( strncmp( b, "OS ", 3) == 0 ){                                         //OK
+    if ( strncmp( b, "OS ", 3) == 0 ){
         //Set origin server
         settings.origin_server = malloc (strlen(b+3));
         memcpy(settings.origin_server, b+3, strlen(b+3)+1);
         printf("---New origin server: %s---\n", settings.origin_server);
         return OK;
     }
-    else if ( strncmp( b, "EF ", 3) == 0 ){                                    //OK
+    else if ( strncmp( b, "EF ", 3) == 0 ){
         //Set error file
         settings.error_file = malloc (strlen(b+3));
         memcpy(settings.error_file, b+3, strlen(b+3)+1);
         printf("---New error file: %s---\n", settings.error_file);
         return OK;
     }
-    else if ( strncmp( b, "PA ", 3) == 0 ){                                    //OK
+    else if ( strncmp( b, "PA ", 3) == 0 ){
         //Set POP3 address
         settings.pop3_address = malloc (strlen(b+3));
         memcpy(settings.pop3_address, b+3, strlen(b+3)+1);
         printf("---New pop3 address: %s---\n", settings.pop3_address);
         return OK;
     }
-    else if ( strncmp( b, "MA ", 3) == 0 ){                                    //OK 
+    else if ( strncmp( b, "MA ", 3) == 0 ){ 
         //Set management address
         settings.management_address = malloc (strlen(b+3));
         memcpy(settings.management_address, b+3, strlen(b+3)+1);
         printf("---New management address: %s---\n", settings.management_address);
         return OK;
     }
-    else if ( strncmp( b, "RM ", 3) == 0 ){                                    //OK
+    else if ( strncmp( b, "RM ", 3) == 0 ){
         //Set replacement message
         settings.replacement_message = malloc (strlen(b+3));
         memcpy(settings.replacement_message, b+3, strlen(b+3)+1);
         return OK;
     }
-    else if ( strncmp( b, "CT ", 3) == 0 ){                                    //OK
+    else if ( strncmp( b, "CT ", 3) == 0 ){
         //Set censurable types
         settings.censurable = malloc (strlen(b+3));
         memcpy(settings.censurable, b+3, strlen(b+3)+1);
         return OK;
     }
-    else if ( strncmp( b, "MP ", 3) == 0 ){                                    //OK
+    else if ( strncmp( b, "MP ", 3) == 0 ){
         //Set management port
         if( settings.management_port == stringToInt(b+3))
             return OK;
@@ -123,7 +123,8 @@ int parseConfigCommand(char b[]){
         printf("---New management port: %d---\n", settings.management_port);
         return MP;
     }
-    else if ( strncmp( b, "PP ", 3) == 0 ){                                    //OK. Note: TCP socket has TIME_WAIT
+    //Note: TCP socket has TIME_WAIT
+    else if ( strncmp( b, "PP ", 3) == 0 ){ 
         //Set POP3 port
         if ( settings.pop3_port == stringToInt(b+3) )
             return OK;
@@ -131,13 +132,13 @@ int parseConfigCommand(char b[]){
         printf("---New POP3 port: %d---\n", settings.pop3_port);
         return PP;
     }
-    else if ( strncmp( b, "OP ", 3) == 0 ){                                    //OK
+    else if ( strncmp( b, "OP ", 3) == 0 ){
         //Set origin port
         settings.origin_port = stringToInt(b+3);
         printf("---New origin port: %d---\n", settings.origin_port);
         return OK;
     }
-    else if ( strncmp( b, "CD ", 3) == 0 ){                                    //OK
+    else if ( strncmp( b, "CD ", 3) == 0 ){
         //Set command
         settings.cmd = malloc (strlen(b+3));
         memcpy(settings.cmd, b+3, strlen(b+3)+1);
@@ -181,7 +182,8 @@ int parseConfigCommand(char b[]){
         metrics.tb_on = 0;
         return OK;
     }
-    else if ( strncmp( b, "GTB", 3) == 0 ){                                     //TB from the servers only
+    //TB from the servers only
+    else if ( strncmp( b, "GTB", 3) == 0 ){
         //Get transfered bytes metrics
         return GTB;
     }

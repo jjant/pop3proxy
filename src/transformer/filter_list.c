@@ -1,3 +1,5 @@
+#define _GNU_SOURCE 1
+
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>

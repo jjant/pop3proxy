@@ -28,9 +28,9 @@ static char * substitute_text;
 static bool erasing = false;
 
 static int state_transition(char c, FILE * transformed_mail);
-static void error();
+static void error(void);
 
-static void error() {
+static void error(void) {
 	state = TRANSPARENT;
 }
 
@@ -365,6 +365,8 @@ static int state_transition(char c, FILE * transformed_mail) {
   				character_token = COMMON;
   			}
 			}
+			break;
+		default:
 			break;
 	}
 	return 0;

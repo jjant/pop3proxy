@@ -17,7 +17,7 @@ $(STRIP_MIME_OUT):
 	$(CC) $(CFLAGS) -o $(STRIP_MIME_OUT) $(STRIP_MIME_SOURCES)
 
 $(POP3_FILTER_OUT):
-	$(CC) $(CFLAGS) -o $(POP3_FILTER_OUT) $(POP3_FILTER_SOURCES) $(POP3FLAGS)
+	$(CC) $(CFLAGS) -o $(POP3_FILTER_OUT) $(POP3_FILTER_SOURCES) $(POP3_FILTER_FLAGS)
 
 $(POP3_CLIENT_OUT):
 	$(CC) $(CFLAGS) -o $(POP3_CLIENT_OUT) $(POP3_CLIENT_SOURCES)
@@ -26,4 +26,4 @@ a:
 		$(CC) -o $(STRIP_MIME_OUT) $(STRIP_MIME_SOURCES) $(CFLAGS) && cp ../mime/mensajes/ii_images.mbox ./retr_mail_0100 && unix2dos ./retr_mail_0100 && FILTER_MEDIAS="image/png" ./stripmime
 
 clean:
-	rm pop3filter pop3ctl stripmime proxy_log.txt proxy_errors_log.txt testT
+	rm pop3filter pop3ctl stripmime proxy_log.txt proxy_errors_log.txt metrics.txt
