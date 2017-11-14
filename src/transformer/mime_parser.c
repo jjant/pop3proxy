@@ -28,6 +28,14 @@ static char * filter_replacement_message;
 static bool erasing = false;
 
 static void initialize_global_variables();
+static void error(void);
+
+static void error() {
+	state = POSSIBLE_ERROR;
+}
+
+int state_transition(char c, FILE * transformed_mail);
+
 
 static void initialize_global_variables(char * filter_medias, char * filter_message) {
 	filter_list[0] = NULL;
@@ -99,7 +107,7 @@ int mime_parser(char * filter_medias, char * filter_message, char * client_numbe
 	   			write_to_comparison_buffer(current_character, &comparison_buffer);
 	   		}
 	   	}
-			state_transition(&state, current_character, transformed_mail);
+			state_transition(current_character, transformed_mail);
 		}
  	}
 
@@ -119,4 +127,257 @@ int mime_parser(char * filter_medias, char * filter_message, char * client_numbe
 	}
 
  	return 0;
+}
+
+int modify_state(state_type new_state) {
+	state = new_state;
+}
+
+
+int handle_header_value(char current_character, FILE * transformed_mail) {
+	if(character_token == NEW_LINE){
+		character_token = COMMON;
+		state = HEADER_NAME;
+		clear_buffer(&comparison_buffer);
+		write_to_comparison_buffer(current_character, &comparison_buffer);
+		return state_transition(current_character, transformed_mail);
+	}
+	if (character_token == CRLFCRLF) {
+		bool is_message = strcicmp(current_content_type.type, "message") == 0;
+		clear_buffer(&comparison_buffer);
+		character_token = COMMON;
+		handle_maybe_message(&state, is_message);
+		return 0;
+	}
+
+	return 0;
+}
+
+int handle_content_type_type(char current_character) {
+	if(current_character == '/') {
+		if(current_content_type.type != NULL) {
+			free(current_content_type.type);
+		}
+		current_content_type.type = allocate_for_string(comparison_buffer.buff);
+		strcpy(current_content_type.type, comparison_buffer.buff);
+		state = CONTENT_TYPE_SUBTYPE;
+		clear_buffer(&comparison_buffer);
+		return 0;
+	}
+	if (is_delimiter(current_character)){
+		error();
+		return 1;
+	}
+
+	return 0;
+}
+
+int handle_content_type_subtype(char current_character, FILE * transformed_mail) {
+	if(current_character == ';' || character_token == NEW_LINE || character_token == CRLFCRLF){
+		if(current_content_type.subtype != NULL) {
+			free(current_content_type.subtype);
+		}
+		current_content_type.subtype = (char*)malloc((strlen(comparison_buffer.buff) + 1) * sizeof(char));
+		strcpy(current_content_type.subtype, comparison_buffer.buff);
+		bool is_content_in_filter_list = is_in_filter_list(filter_list, &current_content_type);
+		clear_buffer(&comparison_buffer);
+		if (is_content_in_filter_list) {
+			write_str_to_out_buff(" text/plain\r\n\r\n", &print_buffer, transformed_mail);
+			write_str_to_out_buff(filter_replacement_message, &print_buffer, transformed_mail);
+			write_str_to_out_buff("\r\n", &print_buffer, transformed_mail);
+			content_type_stack->type = DISCRETE;
+			erasing = true;
+			state = CONTENT_TYPE_BODY;
+			return 0;
+		}
+		bool is_multipart = strcicmp(current_content_type.type,"multipart") == 0;
+		clear_buffer(&comparison_buffer);
+		if (is_multipart) {
+			content_type_stack->type = COMPOSITE;
+			content_type_stack->next = malloc(sizeof(*(content_type_stack->next)));
+			content_type_stack->next->prev = content_type_stack;
+			content_type_stack->next->next = NULL;
+			content_type_stack->boundary = NULL;
+			content_type_stack->next->type = NO_CONTENT;
+		} else {
+			content_type_stack->type = DISCRETE;
+		}
+		write_str_to_out_buff(current_content_type.type, &print_buffer, transformed_mail);
+		write_str_to_out_buff("/", &print_buffer, transformed_mail);
+		write_str_to_out_buff(current_content_type.subtype, &print_buffer, transformed_mail);
+
+		if(current_character == ';') {
+			state = ATTRIBUTE_NAME;
+			clear_buffer(&comparison_buffer);
+			write_str_to_out_buff(";", &print_buffer, transformed_mail);
+			return 0;
+		}
+		if(character_token == NEW_LINE){
+			character_token = COMMON;
+			state = HEADER_NAME;
+			clear_buffer(&comparison_buffer);
+			write_str_to_out_buff("\r\n", &print_buffer, transformed_mail);
+			write_to_out_buff(current_character, &print_buffer, transformed_mail);
+			write_to_comparison_buffer(current_character, &comparison_buffer);
+			return state_transition(current_character, transformed_mail);
+		}
+		if (character_token == CRLFCRLF) {
+			character_token = COMMON;
+			write_str_to_out_buff("\r\n\r\n", &print_buffer, transformed_mail);
+			bool is_message = strcicmp(current_content_type.type,"message") == 0;
+			clear_buffer(&comparison_buffer);
+			handle_maybe_message(&state, is_message);
+			return 0;
+		}
+	}
+
+	return 0;
+}
+
+int handle_attribute_name(char current_character) {
+	if(current_character == '='){
+		bool is_boundary = strcicmp(comparison_buffer.buff, "boundary") == 0;
+		clear_buffer(&comparison_buffer);
+		if(is_boundary) {
+			state = BOUNDARY;
+		} else {
+			state = ATTRIBUTE_VALUE;
+		}
+		return 0;
+	}
+
+	if (is_delimiter(current_character)) {
+		error();
+		return 1;
+	}
+
+	return 0;
+}
+
+int handle_attribute_value(char current_character, FILE * transformed_mail) {
+	if(current_character == ';') {
+		state = ATTRIBUTE_NAME;
+		clear_buffer(&comparison_buffer);
+		return 0;
+	}
+	if(character_token == NEW_LINE){
+		character_token = COMMON;
+		state = HEADER_NAME;
+		clear_buffer(&comparison_buffer);
+		write_to_comparison_buffer(current_character, &comparison_buffer);
+		return state_transition(current_character, transformed_mail);
+	}
+	if (character_token == CRLFCRLF) {
+		bool is_message = strcicmp(current_content_type.type,"message") == 0;
+		clear_buffer(&comparison_buffer);
+		character_token = COMMON;
+		handle_maybe_message(&state, is_message);
+		return 0;
+	}
+
+	return 0;
+}
+
+int handle_boundary(char current_character, FILE * transformed_mail) {
+	if(current_character == ';' || character_token == NEW_LINE || character_token == CRLFCRLF) {
+		content_type_stack->boundary = malloc((strlen(comparison_buffer.buff) + 1) * sizeof(char));
+		strcpy(content_type_stack->boundary, comparison_buffer.buff);
+		clear_buffer(&comparison_buffer);
+		if(current_character == ';') {
+			state = ATTRIBUTE_NAME;
+			clear_buffer(&comparison_buffer);
+			return 0;
+		}
+		if(character_token == NEW_LINE){
+			character_token = COMMON;
+			state = HEADER_NAME;
+			clear_buffer(&comparison_buffer);
+			write_to_comparison_buffer(current_character, &comparison_buffer);
+			return state_transition(current_character, transformed_mail);
+		}
+		if (character_token == CRLFCRLF) {
+			bool is_message = strcicmp(current_content_type.type,"message") == 0;
+			clear_buffer(&comparison_buffer);
+			character_token = COMMON;
+			handle_maybe_message(&state, is_message);
+			return 0;
+		}
+	}
+
+	return 0;
+}
+
+int handle_content_type_body(char current_character, FILE * transformed_mail) {
+	if(character_token == CRLF || character_token == CRLFCRLF) {
+		if(content_type_stack->type == COMPOSITE && check_boundary(comparison_buffer.buff, content_type_stack->boundary) == SEPARATOR) {
+			if(erasing == true){
+				write_str_to_out_buff("--", &print_buffer, transformed_mail);
+				write_str_to_out_buff(content_type_stack->boundary, &print_buffer, transformed_mail);
+			}
+			content_type_stack = content_type_stack->next;
+			content_type_stack->boundary = NULL;
+			state = HEADER_NAME;
+			erasing = false;
+		} else if (content_type_stack->type != COMPOSITE && content_type_stack->prev != NULL) {
+			boundary_type checked_bound = check_boundary(comparison_buffer.buff, content_type_stack->prev->boundary);
+			if(checked_bound == SEPARATOR){
+				if(erasing == true){
+					write_str_to_out_buff("--", &print_buffer, transformed_mail);
+					write_str_to_out_buff(content_type_stack->prev->boundary, &print_buffer, transformed_mail);
+					write_str_to_out_buff("\r\n", &print_buffer, transformed_mail);
+				}
+				state = HEADER_NAME;
+				erasing = false;
+			} else if(checked_bound == FINISH) {
+				if(erasing == true){
+					write_str_to_out_buff("--", &print_buffer, transformed_mail);
+					write_str_to_out_buff(content_type_stack->prev->boundary, &print_buffer, transformed_mail);
+					write_str_to_out_buff("--\r\n", &print_buffer, transformed_mail);
+				}
+				free(content_type_stack->prev->boundary);
+				content_type_stack->prev->boundary = NULL;
+				content_type_stack_type* aux1 = content_type_stack;
+				content_type_stack_type* aux2 = content_type_stack->prev;
+				content_type_stack = content_type_stack->prev->prev;
+				free(aux1);
+				aux2->next = NULL;
+				if(content_type_stack == NULL) {
+					free(aux2);
+					state = POSSIBLE_ERROR;
+				}
+				erasing = false;
+			}
+		}
+		clear_buffer(&comparison_buffer);
+		if(state == HEADER_NAME){
+			character_token = COMMON;
+		}
+	}
+
+	return 0;
+}
+
+int state_transition(char current_character, FILE * transformed_mail) {
+	switch(state) {
+		case POSSIBLE_ERROR:
+			return 0;
+		case HEADER_NAME:
+			return handle_header_name(current_character, &comparison_buffer);
+		case HEADER_VALUE:
+			return handle_header_value(current_character, transformed_mail);
+		case CONTENT_TYPE_TYPE:
+			return handle_content_type_type(current_character);
+		case CONTENT_TYPE_SUBTYPE:
+			return handle_content_type_subtype(current_character, transformed_mail);
+		case ATTRIBUTE_NAME:
+			return handle_attribute_name(current_character);
+		case ATTRIBUTE_VALUE:
+			return handle_attribute_value(current_character, transformed_mail);
+		case BOUNDARY:
+			return handle_boundary(current_character, transformed_mail);
+		case CONTENT_TYPE_BODY:
+			return handle_content_type_body(current_character, transformed_mail);
+		default:
+			return 0;
+	}
 }
