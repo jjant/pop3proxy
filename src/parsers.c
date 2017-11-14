@@ -195,7 +195,7 @@ int parseConfigCommand(char b[]){
         return ERROR;
 }
 
-int stringToInt(char b[]){
+int stringToInt(const char b[]){
     int dec = 0;
     for(int i=0; b[i] >= 48 && b[i] <= 57; i++){
         dec = dec * 10 + ( b[i] - '0' );

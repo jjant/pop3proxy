@@ -19,7 +19,7 @@ int parseServerForCAPA(char b[]);
  */
 int parseConfigCommand(char b[]);
 
-int stringToInt(char b[]);
+int stringToInt(const char b[]);
 
 void intToString(int n, char[]);
 
