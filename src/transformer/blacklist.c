@@ -6,7 +6,7 @@
 #include "blacklist.h"
 #include "buffer_utils.h"
 
-static cTypeNSubType * create_blacklist_element(char * type);
+static cTypeNSubType * create_blacklist_element(char * type, char * subtype);
 static char * allocate_for_string(char * str);
 static bool is_type_equal(char * type1, char * type2);
 static bool is_subtype_equal(char * subtype1, char * subtype2);
@@ -17,8 +17,8 @@ void free_blacklist(cTypeNSubType * blacklist[]) {
 	for(int k = 0; blacklist[k] != NULL; k++) {
 		free(blacklist[k]->type);
 		free(blacklist[k]->subtype);
-   		free(blacklist[k]);
-   	}
+   	free(blacklist[k]);
+ 	}
 }
 
 static bool is_type_equal(char * type1, char * type2) {
@@ -48,11 +48,13 @@ bool is_in_blacklist(cTypeNSubType * blacklist[], cTypeNSubType* content) {
  	return false;
 }
 
-static cTypeNSubType * create_blacklist_element(char * type) {
+static cTypeNSubType * create_blacklist_element(char * type, char * subtype) {
 	cTypeNSubType * const blacklist_element = malloc(sizeof(cTypeNSubType));
 
 	blacklist_element->type = allocate_for_string(type);
+	blacklist_element->subtype = allocate_for_string(subtype);
 	strcpy(blacklist_element->type, type);
+	strcpy(blacklist_element->subtype, subtype);
 
 	return blacklist_element;
 }
@@ -61,28 +63,39 @@ static char * allocate_for_string(char * str) {
 	return (char *)malloc((strlen(str) + 1) * sizeof(char));
 }
 
-static char * get_type() { return ""; }
+static char * get_type(char * token, char ** save_ptr) {
+	char * type = strtok_r(token, "/", save_ptr);
 
-static char * get_subtype() { return ""; }
-	
+	return type;
+}
+
+static char * get_subtype(char ** save_ptr) {
+	char * subtype = strtok_r(NULL, "/", save_ptr);
+
+	return subtype;
+}
+
 void populate_blacklist(cTypeNSubType * blacklist[], char * items, char buffer[]) {
 	int i = 0;
+	char * save_ptr1;
+	char * token;
+	char * items_copy = allocate_for_string(items);
+	strcpy(items_copy, items);
 
-	while(items[0] != '\0') {
-		items = copy_to_buffer(items, buffer);
+	token = strtok_r(items_copy, ",", &save_ptr1);
 
-		if(items[0] == '/') {
-			blacklist[i] = create_blacklist_element(buffer);
-			items++;
-		} else {
-			blacklist[i]->subtype = (char*)malloc((strlen(buffer) + 1) * sizeof(char));
-			strcpy(blacklist[i]->subtype, buffer);
-			if(items[0] == ',') {
-				items++;
-			}
-			i++;
-		}
+	if (token == NULL) {
+		blacklist[i] = NULL;
+		return;
 	}
+
+	do {
+		char * save_ptr2 = NULL;
+		char * type = get_type(token, &save_ptr2);
+		char * subtype = get_subtype(&save_ptr2);
+
+		blacklist[i] = create_blacklist_element(type, subtype);
+	} while((token = strtok_r(NULL, ",", &save_ptr1)) != NULL);
 
 	blacklist[i] = NULL;
 }
