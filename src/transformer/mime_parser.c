@@ -8,7 +8,7 @@
 #include "mime_parser.h"
 #include "buffer_utils.h"
 #include "shared.h"
-#include "blacklist.h"
+#include "filter_list.h"
 #include "parser_types.h"
 #include "boundary_utils.h"
 #include "validations.h"
@@ -16,19 +16,16 @@
 
 #define BUFSIZE 1024
 
-char aux[BUFSIZE] = { 0 };
-Buffer printBuf;
-Buffer compBuf;
-char buff[BUFFLEN];
-char bound[BUFFLEN];
-char stdinBuf[BUFFLEN];
-states state;
-char_types read_chars;
-cTypeStack* cType;
-cTypeNSubType* blacklist[100];
-cTypeNSubType actualContent;
-char* substitute_text;
-erase_action erasing = NOT_ERASING;
+static char aux[BUFSIZE] = { 0 };
+static Buffer printBuf;
+static Buffer compBuf;
+static states state;
+static char_types read_chars;
+static content_type_stack_type* cType;
+static filter_list_type filter_list;
+static content_type_and_subtype actual_content;
+static char * substitute_text;
+static erase_action erasing = NOT_ERASING;
 
 static int transition(char c, FILE * transformed_mail);
 static void error();
@@ -56,22 +53,18 @@ int mime_parser(char * filter_medias, char * filter_message, char * client_numbe
 
 	char * retrieved_mail_file_path  = get_retrieved_mail_file_path(client_number);
   char * transformed_mail_file_path = get_transformed_mail_file_path(client_number);
-
-
 	FILE * retrieved_mail   = fopen(retrieved_mail_file_path, "r");
 	FILE * transformed_mail = fopen(transformed_mail_file_path, "a");
 
- 	blacklist[0] = NULL;
- 	// populate_blacklist("text/html,application/*");
-	// substitute_text = "Content was deleted";
+ 	filter_list[0] = NULL;
 
-	if (filter_medias != NULL) populate_blacklist(blacklist, filter_medias);
+	if (filter_medias != NULL) populate_filter_list(filter_list, filter_medias);
 
 	substitute_text = filter_message;
 
-	actualContent.type = NULL;
-	actualContent.subtype = NULL;
- 	cType = malloc(sizeof(cTypeStack));
+	actual_content.type = NULL;
+	actual_content.subtype = NULL;
+ 	cType = malloc(sizeof(content_type_stack_type));
  	cType->prev = cType->next = NULL;
  	cType->type = NO_CONTENT;
 	cType->boundary = NULL;
@@ -80,16 +73,14 @@ int mime_parser(char * filter_medias, char * filter_message, char * client_numbe
  	int number_read;
  	int is_comment = 1;
 
-	// Eat first characters which correspond to pop3 +ok/-err stuff
+	// Eat first characters which correspond to pop3 +OK/-ERR stuff
 	fread(aux, CHARACTER_SIZE, index_from_which_to_read_file, retrieved_mail);
 
 	#define READ_COUNT BUFSIZE - 1
 
   while ((number_read = fread(aux, CHARACTER_SIZE, READ_COUNT, retrieved_mail)) > 0) {
-
     for (int index = 0; index < number_read && i < BUFFLEN; index++) {
    		c = aux[index];
-
 
 			if(c == '(' && is_comment == 1){
 				is_comment = 0;
@@ -117,7 +108,6 @@ int mime_parser(char * filter_medias, char * filter_message, char * client_numbe
 	   		}
 
 	   	}
-			// printf("char: %c, state: %d, erasing: %d\n", c, state, erasing);
 			transition(c, transformed_mail);
 		}
  	}
@@ -125,10 +115,9 @@ int mime_parser(char * filter_medias, char * filter_message, char * client_numbe
 	fwrite(buffer, CHARACTER_SIZE, strlen(buffer), transformed_mail);
 
 	printBuf.index = 0;
-	free_blacklist(blacklist);
-	free(actualContent.type);
-	free(actualContent.subtype);
-
+	free_filter_list(filter_list);
+	free(actual_content.type);
+	free(actual_content.subtype);
 
   fclose(retrieved_mail);
   fclose(transformed_mail);
@@ -175,7 +164,7 @@ static int transition(char c, FILE * transformed_mail) {
 				return transition(c, transformed_mail);
 			}
 			if (read_chars == CRLFCRLF) {
-				bool is_message = strcicmp(actualContent.type, "message") == 0;
+				bool is_message = strcicmp(actual_content.type, "message") == 0;
 				clear_buffer(&compBuf);
 				read_chars = COMMON;
 				if (is_message) {
@@ -188,11 +177,11 @@ static int transition(char c, FILE * transformed_mail) {
 			break;
 		case CTYPE_DATA:
 			if(c == '/') {
-				if(actualContent.type != NULL) {
-					free(actualContent.type);
+				if(actual_content.type != NULL) {
+					free(actual_content.type);
 				}
-				actualContent.type = (char*)malloc((strlen(compBuf.buff) + 1) * sizeof(char));
-				strcpy(actualContent.type, compBuf.buff);
+				actual_content.type = (char*)malloc((strlen(compBuf.buff) + 1) * sizeof(char));
+				strcpy(actual_content.type, compBuf.buff);
 				state = CSUBTYPE_DATA;
 				clear_buffer(&compBuf);
 				return 0;
@@ -204,14 +193,14 @@ static int transition(char c, FILE * transformed_mail) {
 			break;
 		case CSUBTYPE_DATA:
 			if(c == ';' || read_chars == NEW_LINE || read_chars == CRLFCRLF){
-				if(actualContent.subtype != NULL) {
-					free(actualContent.subtype);
+				if(actual_content.subtype != NULL) {
+					free(actual_content.subtype);
 				}
-				actualContent.subtype = (char*)malloc((strlen(compBuf.buff) + 1) * sizeof(char));
-				strcpy(actualContent.subtype, compBuf.buff);
-				bool is_content_in_blacklist = is_in_blacklist(blacklist, &actualContent);
+				actual_content.subtype = (char*)malloc((strlen(compBuf.buff) + 1) * sizeof(char));
+				strcpy(actual_content.subtype, compBuf.buff);
+				bool is_content_in_filter_list = is_in_filter_list(filter_list, &actual_content);
 				clear_buffer(&compBuf);
-				if (is_content_in_blacklist) {
+				if (is_content_in_filter_list) {
 					write_str_to_out_buff(" text/plain\r\n\r\n", &printBuf, transformed_mail);
 					write_str_to_out_buff(substitute_text, &printBuf, transformed_mail);
 					write_str_to_out_buff("\r\n", &printBuf, transformed_mail);
@@ -220,7 +209,7 @@ static int transition(char c, FILE * transformed_mail) {
 					state = CONTENT_DATA;
 					return 0;
 				}
-				bool is_multipart = strcicmp(actualContent.type,"multipart") == 0;
+				bool is_multipart = strcicmp(actual_content.type,"multipart") == 0;
 				clear_buffer(&compBuf);
 				if (is_multipart) {
 					cType->type = COMPOSITE;
@@ -232,9 +221,9 @@ static int transition(char c, FILE * transformed_mail) {
 				} else {
 					cType->type = DISCRETE;
 				}
-				write_str_to_out_buff(actualContent.type, &printBuf, transformed_mail);
+				write_str_to_out_buff(actual_content.type, &printBuf, transformed_mail);
 				write_str_to_out_buff("/", &printBuf, transformed_mail);
-				write_str_to_out_buff(actualContent.subtype, &printBuf, transformed_mail);
+				write_str_to_out_buff(actual_content.subtype, &printBuf, transformed_mail);
 
 				if(c == ';') {
 					state = ATTR_NAME;
@@ -254,7 +243,7 @@ static int transition(char c, FILE * transformed_mail) {
 				if (read_chars == CRLFCRLF) {
 					read_chars = COMMON;
 		   		write_str_to_out_buff("\r\n\r\n", &printBuf, transformed_mail);
-					bool is_message = strcicmp(actualContent.type,"message") == 0;
+					bool is_message = strcicmp(actual_content.type,"message") == 0;
 					clear_buffer(&compBuf);
 					if (is_message) {
 						state = HEADER_NAME;
@@ -295,7 +284,7 @@ static int transition(char c, FILE * transformed_mail) {
 				return transition(c, transformed_mail);
 			}
 			if (read_chars == CRLFCRLF) {
-				bool is_message = strcicmp(actualContent.type,"message") == 0;
+				bool is_message = strcicmp(actual_content.type,"message") == 0;
 				clear_buffer(&compBuf);
 				read_chars = COMMON;
 				if (is_message) {
@@ -324,7 +313,7 @@ static int transition(char c, FILE * transformed_mail) {
 					return transition(c, transformed_mail);
 				}
 				if (read_chars == CRLFCRLF) {
-					bool is_message = strcicmp(actualContent.type,"message") == 0;
+					bool is_message = strcicmp(actual_content.type,"message") == 0;
 					clear_buffer(&compBuf);
 					read_chars = COMMON;
 					if (is_message) {
@@ -365,8 +354,8 @@ static int transition(char c, FILE * transformed_mail) {
 						}
 						free(cType->prev->boundary);
 						cType->prev->boundary = NULL;
-						cTypeStack* aux1 = cType;
-						cTypeStack* aux2 = cType->prev;
+						content_type_stack_type* aux1 = cType;
+						content_type_stack_type* aux2 = cType->prev;
 						cType = cType->prev->prev;
 						free(aux1);
 						aux2->next = NULL;

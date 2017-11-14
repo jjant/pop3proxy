@@ -31,21 +31,3 @@ void write_to_comp_buff(char c, Buffer * comparison_buffer) {
 	comparison_buffer->buff[comparison_buffer->index++] = c;
 	comparison_buffer->buff[comparison_buffer->index] = 0;
 }
-
-/*
-	El buffer "buff" es donde se copian los fragmentos de strings para su posterior analisis.
-	Los strings se fragmentan segun los delimitadores ':', ';', '=' y '/'.
-*/
-char * copy_to_buffer(char * str, char buffer[]) {
-	int i = 0;
-
-	while(i < BUFFLEN) {
-		if(LIMIT(str[0])) {
-			buffer[i] = 0;
-			return str;
-		}
-		buffer[i++] = str[0];
-		str++;
-	}
-	return str;
-}

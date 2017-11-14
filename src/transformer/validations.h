@@ -3,6 +3,6 @@
 
 #include "parser_types.h"
 
-bool is_email_invalid(cTypeStack * content_type_stack);
+bool is_email_invalid(content_type_stack_type * content_type_stack);
 
 #endif

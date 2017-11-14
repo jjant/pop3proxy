@@ -3,7 +3,7 @@
 
 #define BUFFLEN 10000
 
-typedef struct Buffer{
+typedef struct Buffer {
 	char buff[BUFFLEN];
 	int index;
 } Buffer;
@@ -47,16 +47,18 @@ typedef enum {
   NEW_LINE
 } char_types;
 
-typedef struct cTypeStack{
-	struct cTypeStack* prev;
-	struct cTypeStack* next;
+typedef struct content_type_stack_type{
 	content_type type;
 	char* boundary;
-} cTypeStack;
+	struct content_type_stack_type * prev;
+	struct content_type_stack_type * next;
+} content_type_stack_type;
 
-typedef struct cTypeNSubType{
+typedef struct content_type_and_subtype{
 	char* type;
 	char* subtype;
-} cTypeNSubType;
+} content_type_and_subtype;
+
+typedef content_type_and_subtype * filter_list_type[200];
 
 #endif
