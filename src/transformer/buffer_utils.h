@@ -7,6 +7,8 @@
 void write_to_out_buff(char c, Buffer printBuf, FILE * transformed_mail);
 void write_str_to_out_buff(char* str, Buffer printBuf, FILE * transformed_mail);
 void write_to_comp_buff(char c, Buffer comparison_buffer);
+void clear_buffer(Buffer * buffer_pointer);
+
 /*
 	El buffer "buff" es donde se copian los fragmentos de strings para su posterior analisis.
 	Los strings se fragmentan segun los delimitadores ':', ';', '=' y '/'.

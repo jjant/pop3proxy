@@ -9,7 +9,7 @@
 
 static char * get_path(char * prototype_path, char * client_number);
 
-int strcicmp(char * a, char const * b, Buffer * comparison_buffer) {
+int strcicmp(char * a, char const * b) {
 	int answer = 0;
     for (;; a++, b++) {
         int d = tolower(*a) - tolower(*b);
@@ -18,8 +18,6 @@ int strcicmp(char * a, char const * b, Buffer * comparison_buffer) {
             break;
         }
     }
-    comparison_buffer->index = 0;
-    comparison_buffer->buff[0] = 0;
     return answer;
 }
 

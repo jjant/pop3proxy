@@ -3,6 +3,7 @@
 
 #include "parser_types.h"
 
+/* TODO: Documentar */
 boundary_type check_boundary(char * str, char * boundary);
 
 #endif

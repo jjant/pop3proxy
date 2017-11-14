@@ -3,6 +3,11 @@
 #include "parser_types.h"
 #include "shared.h"
 
+void clear_buffer(Buffer * buffer_pointer) {
+	buffer_pointer->index = 0;
+	buffer_pointer->buff[0] = 0;
+}
+
 void write_to_out_buff(char c, Buffer print_buffer, FILE * transformed_mail) {
 	if(print_buffer.index + 1 >= BUFFLEN){
 		const char * buffer = print_buffer.buff;
@@ -33,6 +38,7 @@ void write_to_comp_buff(char c, Buffer comparison_buffer) {
 */
 char * copy_to_buffer(char * str, char buffer[]) {
 	int i = 0;
+
 	while(i < BUFFLEN) {
 		if(LIMIT(str[0])) {
 			buffer[i] = 0;

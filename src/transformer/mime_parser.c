@@ -12,7 +12,11 @@
 #include "parser_types.h"
 #include "boundary_utils.h"
 #include "validations.h"
+#include "mime_state_machine.h"
 
+#define BUFSIZE 1024
+
+char aux[BUFSIZE] = { 0 };
 Buffer printBuf;
 Buffer compBuf;
 char buff[BUFFLEN];
@@ -24,46 +28,21 @@ cTypeStack* cType;
 cTypeNSubType* blacklist[100];
 cTypeNSubType actualContent;
 char* substitute_text;
-int erasing;
+int erasing = 0;
 
 static int transition(char c, FILE * transformed_mail);
 static void error();
-static char_types get_current_state_char(char c);
-
-static char_types get_current_state_char(char c) {
-	if((read_chars == COMMON || read_chars == FOLD) && c == '\r'){
-		return CR;
-	}
-	if(read_chars == CR && c == '\n'){
-		return CRLF;
-	}
-	if(read_chars == CRLF && c == '\r'){
-		return CRLFCR;
-	}
-	if(read_chars == CRLFCR && c == '\n'){
-		return CRLFCRLF;
-	}
-	if((read_chars == CRLF || read_chars == FOLD) && WHITESPACE(c)){
-		return FOLD;
-	}
-	if(read_chars == CRLF && !WHITESPACE(c)){
-		return NEW_LINE;
-	}
-	return COMMON;
-}
 
 static void error() {
 	state = TRANSPARENT;
 }
 
-#define BUFSIZE 1024
-
-char aux[BUFSIZE] = { 0 };
-
 static void handle_error(char * number) {
 	const char * error_text = "-ERR Connection error or malformed mail\r\n";
 	const char * file_path = get_transformed_mail_file_path(number);
+
 	remove(file_path);
+
   FILE * transformed_mail = fopen(file_path, "w");
 	fwrite(error_text, CHARACTER_SIZE, strlen(error_text), transformed_mail);
 	fclose(transformed_mail);
@@ -120,7 +99,7 @@ int mime_parser(char * filter_medias, char * filter_message, char * client_numbe
 	   		write_to_out_buff(c, printBuf, transformed_mail);
 	   	}
 
-	   	read_chars = get_current_state_char(c);
+	   	read_chars = get_current_state_char(read_chars, c);
 
 	   	if(is_comment == 0) continue;
 
@@ -169,8 +148,9 @@ static int transition(char c, FILE * transformed_mail) {
 			return 0;
 		case HEADER_NAME:
 			if(c == ':'){
-				//printf("\nKAKAKA=%s\n", compBuf.buff);
-		   		if(strcicmp(compBuf.buff, "Content-Type", &compBuf) == 0) {
+				bool is_content_type = strcicmp(compBuf.buff, "Content-Type") == 0;
+				clear_buffer(&compBuf);
+	   		if (is_content_type) {
 					state = CTYPE_DATA;
 				} else {
 					state = HEADER_DATA;
@@ -199,15 +179,15 @@ static int transition(char c, FILE * transformed_mail) {
 				return transition(c, transformed_mail);
 			}
 			if (read_chars == CRLFCRLF) {
+				bool is_message = strcicmp(actualContent.type,"message") == 0;
+				clear_buffer(&compBuf);
 				read_chars = COMMON;
-		   		compBuf.index = 0;
-    			compBuf.buff[0] = 0;
-					if (strcicmp(actualContent.type,"message", &compBuf) == 0){
-						state = HEADER_NAME;
-					} else {
-						state = CONTENT_DATA;
-					}
-		   		return 0;
+				if (is_message) {
+					state = HEADER_NAME;
+				} else {
+					state = CONTENT_DATA;
+				}
+	   		return 0;
 			}
 			break;
 		case CTYPE_DATA:
@@ -234,7 +214,9 @@ static int transition(char c, FILE * transformed_mail) {
 				}
 				actualContent.subtype = (char*)malloc((strlen(compBuf.buff) + 1) * sizeof(char));
 				strcpy(actualContent.subtype, compBuf.buff);
-				if(is_in_blacklist(blacklist, &actualContent, compBuf) == 0) {
+				bool is_content_in_blacklist = is_in_blacklist(blacklist, &actualContent);
+				clear_buffer(&compBuf);
+				if (is_content_in_blacklist) {
 					write_str_to_out_buff(" text/plain\r\n\r\n", printBuf, transformed_mail);
 					write_str_to_out_buff(substitute_text, printBuf, transformed_mail);
 					write_str_to_out_buff("\r\n", printBuf, transformed_mail);
@@ -243,7 +225,9 @@ static int transition(char c, FILE * transformed_mail) {
 					state = CONTENT_DATA;
 					return 0;
 				}
-				if(strcicmp(actualContent.type,"multipart", &compBuf) == 0) {
+				bool is_multipart = strcicmp(actualContent.type,"multipart") == 0;
+				clear_buffer(&compBuf);
+				if (is_multipart) {
 					cType->type = COMPOSITE;
 					cType->next = malloc(sizeof(*(cType->next)));
 					cType->next->prev = cType;
@@ -277,9 +261,9 @@ static int transition(char c, FILE * transformed_mail) {
 				if (read_chars == CRLFCRLF) {
 					read_chars = COMMON;
 		   		write_str_to_out_buff("\r\n\r\n", printBuf, transformed_mail);
-		   		compBuf.index = 0;
-    			compBuf.buff[0] = 0;
-					if (strcicmp(actualContent.type,"message", &compBuf) == 0){
+					bool is_message = strcicmp(actualContent.type,"message") == 0;
+					clear_buffer(&compBuf);
+					if (is_message) {
 						state = HEADER_NAME;
 					} else {
 						state = CONTENT_DATA;
@@ -290,7 +274,9 @@ static int transition(char c, FILE * transformed_mail) {
 			break;
 		case ATTR_NAME:
 			if(c == '='){
-				if(strcicmp(compBuf.buff,"boundary", &compBuf) == 0) {
+				bool is_boundary = strcicmp(compBuf.buff,"boundary") == 0;
+				clear_buffer(&compBuf);
+				if(is_boundary) {
 					state = BOUNDARY;
 				} else {
 					state = ATTR_DATA;
@@ -318,10 +304,10 @@ static int transition(char c, FILE * transformed_mail) {
 				return transition(c, transformed_mail);
 			}
 			if (read_chars == CRLFCRLF) {
+				bool is_message = strcicmp(actualContent.type,"message") == 0;
+				clear_buffer(&compBuf);
 				read_chars = COMMON;
-	   		compBuf.index = 0;
-  			compBuf.buff[0] = 0;
-				if (strcicmp(actualContent.type,"message", &compBuf) == 0){
+				if (is_message) {
   				state = HEADER_NAME;
   			} else {
   				state = CONTENT_DATA;
@@ -351,10 +337,10 @@ static int transition(char c, FILE * transformed_mail) {
 					return transition(c, transformed_mail);
 				}
 				if (read_chars == CRLFCRLF) {
+					bool is_message = strcicmp(actualContent.type,"message") == 0;
+					clear_buffer(&compBuf);
 					read_chars = COMMON;
-		   		compBuf.index = 0;
-    			compBuf.buff[0] = 0;
-					if (strcicmp(actualContent.type,"message", &compBuf) == 0){
+					if (is_message) {
 						state = HEADER_NAME;
 					} else {
 						state = CONTENT_DATA;
