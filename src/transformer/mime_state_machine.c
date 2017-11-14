@@ -55,7 +55,7 @@ int handle_header_name(char current_character, buffer_type * helper_buffer) {
 		clear_buffer(helper_buffer);
 		return 0;
 	}
-	if (is_delimiter(current_character)){
+	if (is_delimiter(current_character)) {
 		modify_state(POSSIBLE_ERROR);
 		return 1;
 	}
