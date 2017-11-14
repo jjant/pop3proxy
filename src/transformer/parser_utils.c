@@ -2,6 +2,24 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <ctype.h>
+#include "shared.h"
+#include "parser_types.h"
+#include "parser_utils.h"
+
+static char * get_path(char * prototype_path, char * client_number);
+
+int strcicmp(char * a, char const * b) {
+	int answer = 0;
+    for (;; a++, b++) {
+        int d = tolower(*a) - tolower(*b);
+        if (d != 0 || !*a){
+            answer = d;
+            break;
+        }
+    }
+    return answer;
+}
 
 void get_env_vars(char **filter_medias, char **filter_message, char **pop3_filter_version, char **pop3_server, char **pop3_username, char **client_number) {
 	*client_number			 = getenv("CLIENT_NUM");
@@ -35,7 +53,7 @@ void print_env_vars(char *filter_medias, char *filter_message, char *pop3_filter
 	printf("[[END PRINT ENV VARS]]\n\n");
 }
 
-char * get_path(char * prototype_path, char * client_number) {
+static char * get_path(char * prototype_path, char * client_number) {
 	char * new_path = malloc(strlen(prototype_path) + 1);
 	strcpy(new_path, prototype_path);
 
@@ -59,33 +77,8 @@ char * get_path(char * prototype_path, char * client_number) {
 
 char * get_retrieved_mail_file_path(char * client_number) {
 		return get_path("./retr_mail_nnnn", client_number);
-    // strcpy(retrieved_mail_file_path, prototype_path);
-		//
-    // #define MAIL_CLIENT_INDEX 15
-		// #define FIRST_N_INDEX 12
-		// // Replaces "nnnn" for client id
-		// int num_size = strlen(client_number);
-		//
-		// for (int q = MAIL_CLIENT_INDEX; q >= FIRST_N_INDEX; q--) {
-		// 		if (num_size > 0) {
-		// 				retrieved_mail_file_path[q] = client_number[num_size - 1];
-		// 				num_size--;
-		// 		} else {
-		// 				retrieved_mail_file_path[q] = '0';
-		// 		}
-		// }
-		//
-    // return retrieved_mail_file_path;
 }
 
 char * get_transformed_mail_file_path(char * client_number) {
 	return get_path("./resp_mail_nnnn", client_number);
-
-  // char * prototype_path = "./resp_mail_nnnn";
-	// char * transformed_mail_file_path = malloc(strlen(prototype_path));
-  // strcpy(transformed_mail_file_path, prototype_path);
-	// #define TRANSFORMED_MAIL_CLIENT_INDEX 19
-  // transformed_mail_file_path[TRANSFORMED_MAIL_CLIENT_INDEX] = client_number;
-	//
-  // return transformed_mail_file_path;
 }
