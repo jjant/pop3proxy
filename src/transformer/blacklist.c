@@ -42,6 +42,7 @@ static bool does_content_type_match(cTypeNSubType * content_type1, cTypeNSubType
 
 bool is_in_blacklist(cTypeNSubType * blacklist[], cTypeNSubType* content) {
 	for(int k = 0; blacklist[k] != NULL; k++) {
+		printf("%s\n", blacklist[k]->type);
  		if (does_content_type_match(content, blacklist[k])) return true;
  	}
 
@@ -75,7 +76,7 @@ static char * get_subtype(char ** save_ptr) {
 	return subtype;
 }
 
-void populate_blacklist(cTypeNSubType * blacklist[], char * items, char buffer[]) {
+void populate_blacklist(cTypeNSubType * blacklist[], char * items) {
 	int i = 0;
 	char * save_ptr1;
 	char * token;
@@ -95,6 +96,7 @@ void populate_blacklist(cTypeNSubType * blacklist[], char * items, char buffer[]
 		char * subtype = get_subtype(&save_ptr2);
 
 		blacklist[i] = create_blacklist_element(type, subtype);
+		i++;
 	} while((token = strtok_r(NULL, ",", &save_ptr1)) != NULL);
 
 	blacklist[i] = NULL;

@@ -28,7 +28,7 @@ cTypeStack* cType;
 cTypeNSubType* blacklist[100];
 cTypeNSubType actualContent;
 char* substitute_text;
-int erasing = 0;
+erase_action erasing = NOT_ERASING;
 
 static int transition(char c, FILE * transformed_mail);
 static void error();
@@ -65,7 +65,7 @@ int mime_parser(char * filter_medias, char * filter_message, char * client_numbe
  	// populate_blacklist("text/html,application/*");
 	// substitute_text = "Content was deleted";
 
-	if (filter_medias != NULL) populate_blacklist(blacklist, filter_medias, buff);
+	if (filter_medias != NULL) populate_blacklist(blacklist, filter_medias);
 
 	substitute_text = filter_message;
 
@@ -117,7 +117,7 @@ int mime_parser(char * filter_medias, char * filter_message, char * client_numbe
 	   		}
 
 	   	}
-
+			// printf("char: %c, state: %d, erasing: %d\n", c, state, erasing);
 			transition(c, transformed_mail);
 		}
  	}
@@ -175,7 +175,7 @@ static int transition(char c, FILE * transformed_mail) {
 				return transition(c, transformed_mail);
 			}
 			if (read_chars == CRLFCRLF) {
-				bool is_message = strcicmp(actualContent.type,"message") == 0;
+				bool is_message = strcicmp(actualContent.type, "message") == 0;
 				clear_buffer(&compBuf);
 				read_chars = COMMON;
 				if (is_message) {

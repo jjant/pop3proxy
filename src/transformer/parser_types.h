@@ -35,7 +35,7 @@ typedef enum {
 typedef enum {
   NOT_ERASING,
   ERASING
-} errase_action;
+} erase_action;
 
 typedef enum {
   CR,

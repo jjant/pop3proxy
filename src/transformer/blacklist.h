@@ -9,6 +9,6 @@ void free_blacklist(cTypeNSubType * blacklist[]);
 /* TODO: Documentar */
 bool is_in_blacklist(cTypeNSubType * blacklist[], cTypeNSubType* content);
 /* TODO: Documentar, cambiar nombre */
-void populate_blacklist(cTypeNSubType * blacklist[], char * items, char buffer[]);
+void populate_blacklist(cTypeNSubType * blacklist[], char * items);
 
 #endif
