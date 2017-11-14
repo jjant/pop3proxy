@@ -3,7 +3,7 @@
 
 #include "parser_types.h"
 
-/* TODO: Documentar */
-boundary_type check_boundary(char * str, char * boundary);
+/* Check if a string is a boundary. If it is, it returns if it is a finishing boundary or a separating one. */
+boundary_type str_check_boundary(char * str, char * boundary);
 
 #endif

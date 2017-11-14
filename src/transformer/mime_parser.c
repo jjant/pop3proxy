@@ -199,7 +199,7 @@ int handle_boundary(char current_character, FILE * transformed_mail) {
 
 int handle_content_type_body(char current_character, FILE * transformed_mail) {
 	if(character_token == CRLF || character_token == CRLFCRLF) {
-		if(content_type_stack->type == COMPOSITE && check_boundary(helper_buffer.buffer, content_type_stack->boundary) == SEPARATOR) {
+		if(content_type_stack->type == COMPOSITE && str_check_boundary(helper_buffer.buffer, content_type_stack->boundary) == SEPARATOR) {
 			if(erasing == true){
 				out_buffer_str_write("--", &output_buffer, transformed_mail);
 				out_buffer_str_write(content_type_stack->boundary, &output_buffer, transformed_mail);
@@ -209,7 +209,7 @@ int handle_content_type_body(char current_character, FILE * transformed_mail) {
 			state = HEADER_NAME;
 			erasing = false;
 		} else if (content_type_stack->type != COMPOSITE && content_type_stack->prev != NULL) {
-			boundary_type checked_bound = check_boundary(helper_buffer.buffer, content_type_stack->prev->boundary);
+			boundary_type checked_bound = str_check_boundary(helper_buffer.buffer, content_type_stack->prev->boundary);
 			if(checked_bound == SEPARATOR){
 				if(erasing == true){
 					out_buffer_str_write("--", &output_buffer, transformed_mail);
