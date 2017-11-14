@@ -10,6 +10,12 @@
 static char * get_path(char * prototype_path, char * client_number);
 
 int strcicmp(char const *a, char const *b) {
+  bool is_a_null = a == NULL;
+  bool is_b_null = b == NULL;
+
+  if ((is_a_null && !is_b_null) || (!is_a_null && is_b_null)) return 1;
+  if (is_a_null && is_b_null) return 0;
+
   for (;; a++, b++) {
     int d = tolower(*a) - tolower(*b);
     if (d != 0 || !*a)

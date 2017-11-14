@@ -249,7 +249,6 @@ int handle_content_type_body(char current_character, FILE * transformed_mail) {
 }
 
 int state_transition(char current_character, FILE * transformed_mail) {
-	printf("char: %c, state: %s\n", current_character, state_to_string(state));
 	switch(state) {
 		case POSSIBLE_ERROR:
 			return 0;
