@@ -336,7 +336,6 @@ void handleNewConnection(int ms, struct sockaddr_in *ca, int *cal,
 }
 
 static void* handleThreadForConnection(void* args) {
-    char                *message              = "Connecting through POP3 proxy... \r\n";
     int                 new_server_socket; 
     int                 new_client_socket, i;
     struct ThreadArgs   *tArgs;
@@ -450,13 +449,6 @@ static void* handleThreadForConnection(void* args) {
             pthread_kill( tArgs->tId, SIGUSR1);
             pthread_exit(0);
         }
-    }
-             
-    //send new connection greeting message
-    if( write(new_client_socket, message, 
-                strlen(message)) != (ssize_t)strlen(message) ) {
-        writeLog(" write greeting message failed\n", proxy_errors_log);
-        perror("write greeting message failed");
     }
              
     pthread_mutex_lock(tArgs->mtx); 
