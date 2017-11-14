@@ -10,6 +10,6 @@ bool is_white_space(char c);
 bool is_white_space_or_separator(char c, char_types character_token);
 bool is_limit_or_boundary(char c);
 bool is_cr_or_lf(char c);
-bool should_write(bool erasing, states state);
+bool should_write(bool erasing, state_type state);
 
 #endif

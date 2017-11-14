@@ -30,6 +30,6 @@ bool is_white_space_or_separator(char c, char_types character_token) {
 	return (is_delimiter(c) || is_white_space(c) || is_limit_or_boundary(c) || character_token == NEW_LINE);
 }
 
-bool should_write(bool erasing, states state) {
-	return !(erasing == true || state == CTYPE_DATA || state == CSUBTYPE_DATA);
+bool should_write(bool erasing, state_type state) {
+	return !(erasing == true || state == CONTENT_TYPE_TYPE || state == CONTENT_TYPE_SUBTYPE);
 }

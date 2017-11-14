@@ -9,6 +9,6 @@ void free_filter_list(content_type_and_subtype * filter_list[]);
 /* TODO: Documentar */
 bool is_in_filter_list(content_type_and_subtype * filter_list[], content_type_and_subtype* content);
 /* TODO: Documentar, cambiar nombre */
-void populate_filter_list(content_type_and_subtype * filter_list[], char * items);
+void initialize_filter_list(content_type_and_subtype * filter_list[], char * items);
 
 #endif
