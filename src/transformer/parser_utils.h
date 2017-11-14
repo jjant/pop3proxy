@@ -8,6 +8,6 @@ void print_env_vars(char *, char *, char *, char *, char *, char *);
 char * get_retrieved_mail_file_path(char *);
 char * get_transformed_mail_file_path(char *);
 /* Case insensitive string compare */
-int strcicmp(char * a, char const * b);
+int strcicmp(char const * a, char const * b);
 
 #endif

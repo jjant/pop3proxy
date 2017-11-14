@@ -1,35 +1,35 @@
 #ifndef PARSER_TYPES_H
 #define PARSER_TYPES_H
 
-#define BUFFLEN 10000
+#define BUFFER_SIZE 8192
 
-typedef struct Buffer {
-	char buff[BUFFLEN];
+typedef struct buffer_type {
 	int index;
-} Buffer;
+	char buffer[BUFFER_SIZE];
+} buffer_type;
 
 typedef enum {
   HEADER_NAME = 0,
-  HEADER_DATA,
-  CTYPE_DATA,
-  CSUBTYPE_DATA,
-  ATTR_NAME,
-  ATTR_DATA,
+  HEADER_VALUE,
+  CONTENT_TYPE_TYPE,
+  CONTENT_TYPE_SUBTYPE,
+  ATTRIBUTE_NAME,
+  ATTRIBUTE_VALUE,
   BOUNDARY,
-  CONTENT_DATA,
-  TRANSPARENT
-} states;
+  CONTENT_TYPE_BODY,
+  POSSIBLE_ERROR
+} state_type;
 
 typedef enum {
-  NO_CONTENT,
+  NONE,
   COMPOSITE,
-  DISCRETE
+  SIMPLE
 } content_type;
 
 typedef enum {
   SEPARATOR,
+	NOT_BOUNDARY,
   FINISH,
-  NOT_BOUNDARY
 } boundary_type;
 
 typedef enum {
@@ -37,10 +37,10 @@ typedef enum {
   CRLF,
   CRLFCR,
   CRLFCRLF,
-  FOLD,
-  COMMON,
+  FOLDING,
+  REGULAR,
   NEW_LINE
-} char_types;
+} character_token_type;
 
 typedef struct content_type_stack_type{
 	content_type type;

@@ -9,16 +9,16 @@
 
 static char * get_path(char * prototype_path, char * client_number);
 
-int strcicmp(char * a, char const * b) {
-	int answer = 0;
-    for (;; a++, b++) {
-        int d = tolower(*a) - tolower(*b);
-        if (d != 0 || !*a){
-            answer = d;
-            break;
-        }
-    }
-    return answer;
+int strcicmp(char const *a, char const *b) {
+  for (;; a++, b++) {
+    int d = tolower(*a) - tolower(*b);
+    if (d != 0 || !*a)
+      return d;
+  }
+}
+
+char * allocate_for_string(char * str) {
+	return (char *)malloc((strlen(str) + 1) * sizeof(char));
 }
 
 void get_env_vars(char **filter_medias, char **filter_message, char **pop3_filter_version, char **pop3_server, char **pop3_username, char **client_number) {
