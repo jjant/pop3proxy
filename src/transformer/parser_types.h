@@ -5,7 +5,7 @@
 
 typedef struct buffer_type {
 	int index;
-	char buff[BUFFER_SIZE];
+	char buffer[BUFFER_SIZE];
 } buffer_type;
 
 typedef enum {
@@ -21,15 +21,15 @@ typedef enum {
 } state_type;
 
 typedef enum {
-  NO_CONTENT,
+  NONE,
   COMPOSITE,
-  DISCRETE
+  SIMPLE
 } content_type;
 
 typedef enum {
   SEPARATOR,
+	NOT_BOUNDARY,
   FINISH,
-  NOT_BOUNDARY
 } boundary_type;
 
 typedef enum {
@@ -37,10 +37,10 @@ typedef enum {
   CRLF,
   CRLFCR,
   CRLFCRLF,
-  FOLD,
-  COMMON,
+  FOLDING,
+  REGULAR,
   NEW_LINE
-} char_types;
+} character_token_type;
 
 typedef struct content_type_stack_type{
 	content_type type;
