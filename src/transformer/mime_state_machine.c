@@ -1,24 +1,25 @@
+#include "validations.h"
 #include "parser_types.h"
 #include "mime_state_machine.h"
 #include "shared.h"
 
-char_types get_current_state_char(char_types read_chars, char c) {
-	if((read_chars == COMMON || read_chars == FOLD) && c == '\r'){
+char_types get_current_state_char(char_types character_token, char c) {
+	if((character_token == COMMON || character_token == FOLD) && c == '\r'){
 		return CR;
 	}
-	if(read_chars == CR && c == '\n'){
+	if(character_token == CR && c == '\n'){
 		return CRLF;
 	}
-	if(read_chars == CRLF && c == '\r'){
+	if(character_token == CRLF && c == '\r'){
 		return CRLFCR;
 	}
-	if(read_chars == CRLFCR && c == '\n'){
+	if(character_token == CRLFCR && c == '\n'){
 		return CRLFCRLF;
 	}
-	if((read_chars == CRLF || read_chars == FOLD) && WHITESPACE(c)){
+	if((character_token == CRLF || character_token == FOLD) && is_white_space(c)){
 		return FOLD;
 	}
-	if(read_chars == CRLF && !WHITESPACE(c)){
+	if(character_token == CRLF && !is_white_space(c)){
 		return NEW_LINE;
 	}
 	return COMMON;

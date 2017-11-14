@@ -33,11 +33,6 @@ typedef enum {
 } boundary_type;
 
 typedef enum {
-  NOT_ERASING,
-  ERASING
-} erase_action;
-
-typedef enum {
   CR,
   CRLF,
   CRLFCR,
